@@ -1,0 +1,92 @@
+name: arca_app
+description: "Conecte-se com a palavra de Deus. Estudos, orações e eventos da Biblicos."
+publish_to: 'none' 
+version: 1.0.0+1
+
+environment:
+  # SDK ajustado para aceitar o ambiente do Render (Flutter 3.24 / Dart 3.5)
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- Core & UI ---
+  cupertino_icons: ^1.0.8
+  flutter_svg: ^2.0.10      # Versão estável
+  scrollable_positioned_list: ^0.3.8
+  
+  # --- State Management ---
+  provider: ^6.1.2
+
+  # --- Backend & Networking ---
+  http: ^1.2.2              # Downgrade seguro (evita conflito Dart 3.6)
+  dio: ^5.7.0               # Downgrade seguro
+  supabase_flutter: ^2.8.1  # Versão compatível com o Dio acima
+
+  # --- Utilities & Storage ---
+  flutter_dotenv: ^5.1.0
+  shared_preferences: ^2.3.2 # Versão estável para Flutter 3.24
+  share_plus: ^10.0.0       # CRÍTICO: Versões 12+ quebram no Render
+  image_picker: ^1.1.2      # CRÍTICO: Versão 1.2+ quebra no Render
+  screenshot: ^3.0.0      # Versão estável
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # --- Linting ---
+  flutter_lints: ^4.0.0     # Compatível com Dart 3.4+
+
+  # --- Build Tools (Icons & Splash) ---
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.1
+
+# --- Flutter Configuration ---
+flutter:
+  uses-material-design: true
+
+  assets:
+    - .env #assets/env
+    - assets/images/logo_arca.jpg
+    - assets/images/arca_logo_circle.png
+    - assets/images/vof_bg_1.jpg
+    - assets/images/vof_bg_2.jpg
+    - assets/images/vof_bg_3.jpg
+    - assets/images/vof_bg_4.jpg
+    - assets/images/vof_bg_5.jpg
+    - assets/images/vof_bg_6.jpg
+    - assets/images/vof_bg_7.jpg
+    - assets/images/vof_bg_8.jpg
+    - assets/images/vof_bg_9.jpg
+    - assets/images/vof_bg_10.jpg
+    - assets/images/vof_bg_11.jpg
+    - assets/icons/google_logo.svg
+    - assets/icons/prayer_hands.png
+
+# --- Package Configurations ---
+
+flutter_launcher_icons:
+  android: "launcher_icon" #true
+  ios: true
+  image_path: "assets/images/arca_logo_circle.png" 
+  min_sdk_android: 21
+  # Configuração para Android Moderno (Ícones Adaptativos)
+  adaptive_icon_background: "#5B2C6F" 
+  adaptive_icon_foreground: "assets/images/arca_logo_circle.png"
+  # Configuração para iOS (Remove transparência para evitar fundo preto automático)
+  remove_alpha_ios: true
+  background_color_ios: "#5B2C6F"
+
+flutter_native_splash:
+  android: true
+  ios: false
+  color: "#5B2C6F"
+  image: "assets/images/arca_logo_circle.png"
+  fullscreen: true
+  android_gravity: center
+
+# --- Overrides (Para resolver conflitos internos) ---
+dependency_overrides:
+  path: 1.9.0
