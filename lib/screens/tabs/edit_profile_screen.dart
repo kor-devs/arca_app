@@ -66,24 +66,39 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return;
     }
     setState(() { _isLoading = true; });
+
     try {
       final user = supabase.auth.currentUser;
       if (user == null) throw Exception("Usuário não encontrado");
+
       String? newAvatarUrl = _avatarUrl;
+
+      // Se o usuário escolheu uma nova imagem
       if (_pickedImage != null) {
         final imageFile = File(_pickedImage!.path);
         final imageExtension = _pickedImage!.path.split('.').last.toLowerCase();
+        
+        // Caminho fixo para substituir o anterior
         final String imagePath = '${user.id}/avatar.$imageExtension';
+
+        // 1. Faz o Upload (sobrescrevendo o anterior)
         await supabase.storage.from('avatars').upload(
           imagePath,
           imageFile,
           fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
         );
-        newAvatarUrl = supabase.storage
-            .from('avatars')
-            .getPublicUrl(imagePath);
+
+        // 2. Pega a URL base
+        final String baseUrl = supabase.storage.from('avatars').getPublicUrl(imagePath);
+
+        // 3. [O PULO DO GATO] Adiciona um timestamp no final da URL
+        // Isso força o Flutter a baixar a imagem nova, pois a URL mudou (ex: avatar.jpg?t=123456)
+        newAvatarUrl = "$baseUrl?t=${DateTime.now().millisecondsSinceEpoch}";
       }
+
       final newName = _nameController.text.trim();
+
+      // 4. Atualiza os metadados do usuário com a nova URL (com timestamp)
       await supabase.auth.updateUser(
         UserAttributes(
           data: {
@@ -92,21 +107,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           }
         )
       );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Perfil atualizado com sucesso!')),
       );
+      
+      // Retorna true para quem chamou saber que houve update
       Navigator.pop(context, true);
+
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao atualizar o perfil: $e')),
       );
     }
-    if (!mounted) return;
-    setState(() { _isLoading = false; });
+    
+    if (mounted) {
+      setState(() { _isLoading = false; });
+    }
   }
-
   Widget _buildAvatar() {
     if (_pickedImage != null) {
       return CircleAvatar(

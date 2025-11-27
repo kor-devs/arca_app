@@ -1,10 +1,13 @@
-// lib/screens/tabs/profile_screen.dart (V1.17.3 - Mostra a Foto)
+// lib/screens/tabs/profile_screen.dart (V2.1 - Fix Navegação)
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
-import '../../main.dart'; // Para acessar 'supabase'
+import '../../main.dart';
 import '../../constants.dart';
-import 'edit_profile_screen.dart'; 
+import 'edit_profile_screen.dart';
+import 'favorites_screen.dart';
+import 'notes_screen.dart';
+import '../main_screen.dart'; 
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -16,7 +19,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
 
   void _inviteFriends(BuildContext context) {
-    const String appUrl = "https://play.google.com/store/apps/details?id=com.example.arca_app"; // (Placeholder)
+    const String appUrl = "https://play.google.com/store/apps/details?id=com.example.arca_app"; 
     const String message = "Olá! Estou usando o app Arca para minha jornada espiritual. Baixe você também!\n\n$appUrl";
     Share.share(message);
   }
@@ -35,74 +38,136 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // [CORREÇÃO AQUI]
+  void _navigateToFavorites() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        // Renomeamos 'context' para 'ctx' para não esconder o 'context' da ProfileScreen
+        builder: (ctx) => FavoritesScreen(
+          onJumpToBible: (abbrev, chapter, verse) {
+            // Usa 'ctx' para fechar a tela de Favoritos
+            Navigator.pop(ctx); 
+            
+            // Usa 'context' (da ProfileScreen) para encontrar a MainScreen
+            final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+            
+            if (mainScreen != null) {
+               mainScreen.jumpToBible(abbrev, chapter, verse);
+            } else {
+               debugPrint("ERRO: MainScreenState não encontrado via ProfileScreen context.");
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  // [CORREÇÃO AQUI TAMBÉM]
+  void _navigateToNotes() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        // Renomeamos para 'ctx' aqui também
+        builder: (ctx) => NotesScreen(
+          onJumpToBible: (abbrev, chapter, verse) {
+            Navigator.pop(ctx); 
+            
+            // Usa 'context' original
+            final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+            mainScreen?.jumpToBible(abbrev, chapter, verse);
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // (A lógica de 'user' agora vive dentro do 'build')
     final user = supabase.auth.currentUser;
     final String userName = user?.userMetadata?['full_name'] ?? "Usuário";
     final String userEmail = user?.email ?? "Carregando...";
-    // --- ETAPA 12: Pega a URL da Foto ---
     final String? avatarUrl = user?.userMetadata?['avatar_url'];
-    // --- FIM ETAPA 12 ---
     
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: arcaPurple, // Define a cor de fundo como roxo
-        foregroundColor: arcaWhite,  // Define a cor de ícones e textos como branco
-        // Para garantir que a barra de status do sistema siga o esquema (opcional, mas recomendado)
+        backgroundColor: arcaPurple, 
+        foregroundColor: arcaWhite,  
         systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarIconBrightness: Brightness.light, // Ícones pretos para o fundo roxo (iOS)
-          statusBarBrightness: Brightness.light,     // Ícones brancos para o fundo roxo (Android)
+          statusBarIconBrightness: Brightness.light, 
+          statusBarBrightness: Brightness.light,     
         ),
-        title: const Text("Perfil"),
-        actions: const [
-          // (Removido ícone de busca conforme solicitado)
-        ],
+        title: const Text("Opções & Perfil"),
       ),
       body: ListView(
         children: [
+          // --- HEADER DO USUÁRIO ---
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
-                
-                // --- ETAPA 12: Avatar Real (Custo Zero) ---
                 CircleAvatar(
                   radius: 35,
                   backgroundColor: arcaPurple,
-                  // Se a URL não for nula, usa NetworkImage
-                  // Senão, usa a Letra
                   backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) 
                       ? NetworkImage(avatarUrl) 
                       : null,
                   child: (avatarUrl != null && avatarUrl.isNotEmpty)
-                    ? null // Se tem imagem, não mostra a letra
+                    ? null 
                     : Text(
                         userName.isNotEmpty ? userName[0].toUpperCase() : "A",
                         style: const TextStyle(color: arcaWhite, fontSize: 30),
                       ),
                 ),
-                // --- FIM ETAPA 12 ---
-
                 const SizedBox(width: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      userName,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      userEmail,
-                      style: const TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        userName,
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        userEmail,
+                        style: const TextStyle(fontSize: 14, color: Colors.grey),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
           
           const Divider(),
+          
+          Padding(
+            padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+            child: Text("PESSOAL", style: TextStyle(color: Colors.grey[600], fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.bookmark, color: arcaOrange),
+            title: const Text("Meus Favoritos"),
+            trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+            onTap: _navigateToFavorites, 
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.edit_note, color: arcaOrange),
+            title: const Text("Minhas Notas"),
+            trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+            onTap: _navigateToNotes, 
+          ),
+          
+          const Divider(),
+
+          Padding(
+            padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+            child: Text("GERAL", style: TextStyle(color: Colors.grey[600], fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
 
           ListTile(
             leading: const Icon(Icons.share, color: arcaPurple),
@@ -126,7 +191,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
-            title: const Text("Sair (Logout)"),
+            title: const Text("Sair"),
             onTap: () {
               _signOut(context);
             },

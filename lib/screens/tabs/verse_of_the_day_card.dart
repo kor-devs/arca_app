@@ -11,7 +11,9 @@ import '../main_screen.dart';
 class VerseOfTheDayCard extends StatefulWidget {
   final RandomVerse verse;
   final VoidCallback onSharePressed;
-  const VerseOfTheDayCard({super.key, required this.verse, required this.onSharePressed});
+  final bool isSharingMode;
+
+  const VerseOfTheDayCard({super.key, required this.verse, required this.onSharePressed, this.isSharingMode = false,});
 
   @override
   State<VerseOfTheDayCard> createState() => _VerseOfTheDayCardState();
@@ -194,9 +196,7 @@ class _VerseOfTheDayCardState extends State<VerseOfTheDayCard> {
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(color: arcaPurple);
-                },
+                errorBuilder: (context, error, stackTrace) => Container(color: arcaPurple),
               ),
             ),
 
@@ -229,25 +229,6 @@ class _VerseOfTheDayCardState extends State<VerseOfTheDayCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 5), // Espaço do topo
-                    
-                    // --- TOPO: Badge e Referência ---
-                    /*Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: arcaWhite.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white30),
-                      ),
-                      child: const Text(
-                        "VERSÍCULO DO DIA",
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          color: arcaWhite,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ),*/
                     
                     const SizedBox(height: 8),
                     
@@ -293,51 +274,71 @@ class _VerseOfTheDayCardState extends State<VerseOfTheDayCard> {
               ),
             ),
 
-            // 4. BOTÕES DE AÇÃO (Rodapé - Mantido igual)
+            // 4. BOTÕES DE AÇÃO (Rodapé)
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      onPressed: _cycleBackground,
-                      tooltip: "Mudar tema",
-                      style: IconButton.styleFrom(
-                        backgroundColor: arcaWhite.withOpacity(0.15),
-                      ),
-                      icon: const Icon(Icons.photo_library_outlined, color: arcaWhite, size: 20),
-                    ),
-
-                    Row(
-                      children: [
-                        if (!_isLoadingStats)
-                          _buildActionButton(
-                            icon: Image.asset(
-                              'assets/icons/prayer_hands.png',
-                              color: _isLiked ? arcaOrange : arcaWhite,
-                              width: 22, height: 22,
+              child: widget.isSharingMode
+                  // --- MODO COMPARTILHAMENTO (BRANDING) ---
+                  ? Container(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end, // Alinha à direita
+                        children: [
+                          // Logo pequeno
+                          Image.asset(
+                            'assets/images/arca_logo_circle.png', // Use seu logo
+                            width: 30,
+                            height: 30,
+                          ),
+                          const SizedBox(width: 8),
+                          // Arroba
+                          const Text(
+                            "@entrenaarca", // Seu user do Instagram/Rede Social
+                            style: TextStyle(
+                              color: arcaWhite,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              shadows: [Shadow(blurRadius: 4, color: Colors.black)],
                             ),
-                            label: _likeCount.toString(),
-                            onTap: _toggleLike,
                           ),
-                        
-                        const SizedBox(width: 16),
-
-                        if (!_isLoadingStats)
-                          _buildActionButton(
-                            icon: const Icon(Icons.share_outlined, color: arcaWhite, size: 22),
-                            label: _shareCount.toString(),
-                            onTap: widget.onSharePressed,
+                        ],
+                      ),
+                    )
+                  // --- MODO NORMAL (BOTÕES) ---
+                  : Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+                      child: Row(
+                        // ... (Seu código antigo dos botões de like, share, imagem)
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          IconButton(
+                            onPressed: _cycleBackground,
+                            tooltip: "Mudar tema",
+                            style: IconButton.styleFrom(backgroundColor: arcaWhite.withOpacity(0.15)),
+                            icon: const Icon(Icons.photo_library_outlined, color: arcaWhite, size: 20),
                           ),
-                      ],
+                          Row(
+                            children: [
+                              if (!_isLoadingStats)
+                                _buildActionButton(
+                                  icon: Image.asset('assets/icons/prayer_hands.png', color: _isLiked ? arcaOrange : arcaWhite, width: 22, height: 22),
+                                  label: _likeCount.toString(),
+                                  onTap: _toggleLike,
+                                ),
+                              const SizedBox(width: 16),
+                              if (!_isLoadingStats)
+                                _buildActionButton(
+                                  icon: const Icon(Icons.share_outlined, color: arcaWhite, size: 22),
+                                  label: _shareCount.toString(),
+                                  onTap: widget.onSharePressed,
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                )
-              ),
             ),
           ],
         ),

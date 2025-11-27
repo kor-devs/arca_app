@@ -48,7 +48,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - .env #assets/env
+    - assets/env #--- local usa .env e online assets/env ---
     - assets/images/logo_arca.jpg
     - assets/images/arca_logo_circle.png
     - assets/images/vof_bg_1.jpg

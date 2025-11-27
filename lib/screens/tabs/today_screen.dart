@@ -35,6 +35,7 @@ class TodayScreenState extends State<TodayScreen> {
   bool _showTutorial = true;
   final PageController _tutorialController = PageController();
   int _currentTutorialPage = 0;
+  bool _isSharing = false;
 
   final List<Map<String, String>> _tutorialSteps = [
     {
@@ -166,16 +167,33 @@ class TodayScreenState extends State<TodayScreen> {
   }
 
   void _captureAndShareVerseCard(RandomVerse verse) async {
+    // 1. Entra no modo de compartilhamento (esconde botões, mostra logo)
+    setState(() {
+      _isSharing = true;
+    });
+
+    // 2. Aguarda um frame para o Flutter redesenhar a tela "limpa"
+    await Future.delayed(const Duration(milliseconds: 50));
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando imagem...'), duration: Duration(seconds: 1)));
     try {
+      // 3. Tira o print da tela limpa
       final Uint8List? imageBytes = await _screenshotController.capture(delay: const Duration(milliseconds: 20));
+      
+      // 4. Sai do modo de compartilhamento imediatamente (volta os botões)
+      setState(() {
+        _isSharing = false;
+      });
+      
       if (imageBytes != null) {
         final xFile = XFile.fromData(imageBytes, mimeType: 'image/png', name: 'versiculo_arca.png');
-        await Share.shareXFiles([xFile], text: "Leia a Bíblia com o Arca App! \"${verse.reference}\"");
+        // Texto de acompanhamento no post        
+        await Share.shareXFiles([xFile], text: "\"${verse.text}\"${verse.reference} \n \n Continue lendo na Arca: arca.kordevs.com");
         try { await supabase.rpc('increment_verse_share', params: {'p_verse_ref': verse.reference}); } catch (_) {}
       }
     } catch (e) {
       debugPrint("Erro share: $e");
+      // Garante que volta ao normal mesmo se der erro
+      setState(() { _isSharing = false; });
     }
   }
 
@@ -405,6 +423,7 @@ class TodayScreenState extends State<TodayScreen> {
                     child: VerseOfTheDayCard(
                       verse: snapshot.data!,
                       onSharePressed: () => _captureAndShareVerseCard(snapshot.data!), 
+                      isSharingMode: _isSharing,
                     ),
                   ),
                 ),
