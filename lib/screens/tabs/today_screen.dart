@@ -198,7 +198,15 @@ class TodayScreenState extends State<TodayScreen> {
             // Navega para a tela de devocional criada anteriormente
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => const DevotionalScreen()),
+              MaterialPageRoute(
+                builder: (ctx) => DevotionalScreen(
+                  onJumpToBible: (abbrev, chapter, verse) {
+                    // Usamos o 'context' da TodayScreen para achar a MainScreen
+                    final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+                    mainScreen?.jumpToBible(abbrev, chapter, verse);
+                  },
+                ),
+              ),
             );
           },
           borderRadius: BorderRadius.circular(16),

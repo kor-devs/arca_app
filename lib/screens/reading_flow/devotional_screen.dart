@@ -1,12 +1,18 @@
-// lib/screens/reading_flow/devotional_screen.dart (V1.1 - Com Navegação)
+// lib/screens/reading_flow/devotional_screen.dart (V1.2 - Histórico e Save)
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../main.dart';
 import '../../constants.dart';
-import '../main_screen.dart'; // <--- Importante para navegação
 
 class DevotionalScreen extends StatefulWidget {
-  const DevotionalScreen({super.key});
+  final void Function(String abbrev, int chapter, int verse)? onJumpToBible;
+  final int? specificDevotionalId; // [NOVO] Para abrir um antigo
+
+  const DevotionalScreen({
+    super.key, 
+    this.onJumpToBible,
+    this.specificDevotionalId, 
+  });
 
   @override
   State<DevotionalScreen> createState() => _DevotionalScreenState();
@@ -15,13 +21,40 @@ class DevotionalScreen extends StatefulWidget {
 class _DevotionalScreenState extends State<DevotionalScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _devotional;
+  bool _isSaving = false; // Controle de loading do botão
   
   @override
   void initState() {
     super.initState();
-    _fetchDailyDevotional();
+    if (widget.specificDevotionalId != null) {
+      _fetchSpecificDevotional(widget.specificDevotionalId!);
+    } else {
+      _fetchDailyDevotional();
+    }
   }
 
+  // Busca um específico (Vindo do Histórico)
+  Future<void> _fetchSpecificDevotional(int id) async {
+    setState(() { _isLoading = true; });
+    try {
+      final response = await supabase
+          .from('devotionals')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      
+      if (mounted) {
+        setState(() {
+          _devotional = response;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Busca o de hoje (Lógica Original)
   Future<void> _fetchDailyDevotional() async {
     final now = DateTime.now();
     final diff = now.difference(DateTime(now.year, 1, 1, 0, 0));
@@ -30,14 +63,12 @@ class _DevotionalScreenState extends State<DevotionalScreen> {
     setState(() { _isLoading = true; });
 
     try {
-      // Tenta buscar o dia exato
       var response = await supabase
           .from('devotionals')
           .select()
           .eq('day_of_year', realDayOfYear)
           .maybeSingle();
 
-      // Fallback: Se não achar, busca um dos 7 existentes
       if (response == null) {
         final int fallbackDay = ((realDayOfYear - 1) % 7) + 1;
         response = await supabase
@@ -54,28 +85,52 @@ class _DevotionalScreenState extends State<DevotionalScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Erro crítico ao buscar devocional: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // --- NOVA FUNÇÃO DE NAVEGAÇÃO ---
+  // [NOVO] Salva no banco que o usuário leu
+  Future<void> _markAsRead() async {
+    if (_devotional == null || _isSaving) return;
+    
+    setState(() { _isSaving = true; });
+    
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        await supabase.from('user_devotionals').upsert({
+          'user_id': user.id,
+          'devotional_id': _devotional!['id'],
+          'completed_at': DateTime.now().toUtc().toIso8601String(),
+        }, onConflict: 'user_id, devotional_id'); // Evita erro se já existir
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Amém! Devocional salvo no seu histórico."))
+        );
+      }
+    } catch (e) {
+      debugPrint("Erro ao salvar: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Erro ao salvar progresso."))
+        );
+        setState(() { _isSaving = false; });
+      }
+    }
+  }
+
   void _navigateToVerse() {
     if (_devotional == null) return;
-
-    // 1. Extrai os dados seguros do banco
     final String abbrev = _devotional!['book_abbrev'];
     final int chapter = _devotional!['chapter'];
     final int verseNum = _devotional!['verse_number'];
 
-    // 2. Fecha a tela de Devocional (Pop)
     Navigator.pop(context);
-
-    // 3. Encontra a MainScreen e comanda a navegação
-    final mainScreen = context.findAncestorStateOfType<MainScreenState>();
-    if (mainScreen != null) {
-      // Usa a mesma função que Favoritos e Notas usam
-      mainScreen.jumpToBible(abbrev, chapter, verseNum);
+    if (widget.onJumpToBible != null) {
+      widget.onJumpToBible!(abbrev, chapter, verseNum);
     }
   }
 
@@ -159,9 +214,8 @@ Entre na Arca para ler mais!
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // 1. Card do Versículo (Agora Clicável)
                             InkWell(
-                              onTap: _navigateToVerse, // <--- Ação de clique
+                              onTap: _navigateToVerse,
                               borderRadius: BorderRadius.circular(16),
                               child: Container(
                                 padding: const EdgeInsets.all(20),
@@ -197,7 +251,6 @@ Entre na Arca para ler mais!
                                           ),
                                         ),
                                         const SizedBox(width: 6),
-                                        // Ícone indicando que é clicável
                                         const Icon(Icons.arrow_forward, size: 14, color: arcaPurple),
                                       ],
                                     ),
@@ -212,8 +265,6 @@ Entre na Arca para ler mais!
                             ),
 
                             const SizedBox(height: 30),
-
-                            // 2. Título Teológico
                             const _SectionHeader(icon: Icons.school_outlined, title: "Estudo da Palavra"),
                             const SizedBox(height: 10),
                             Text(
@@ -224,7 +275,6 @@ Entre na Arca para ler mais!
 
                             const Divider(height: 50, color: Colors.grey),
 
-                            // 3. Título Reflexão
                             const _SectionHeader(icon: Icons.favorite_border, title: "Para o Coração"),
                             const SizedBox(height: 10),
                             Text(
@@ -237,20 +287,17 @@ Entre na Arca para ler mais!
 
                             Center(
                               child: ElevatedButton.icon(
-                                icon: const Icon(Icons.check_circle_outline),
-                                label: const Text("Li e Meditei hoje"),
+                                icon: _isSaving 
+                                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                                  : const Icon(Icons.check_circle_outline),
+                                label: Text(_isSaving ? "Salvando..." : "Li e Meditei hoje"),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: arcaPurple,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                                 ),
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text("Amém! Palavra guardada no coração."))
-                                  );
-                                },
+                                onPressed: _markAsRead, // [CHAMA O NOVO MÉTODO]
                               ),
                             ),
                             const SizedBox(height: 40),
@@ -265,23 +312,15 @@ Entre na Arca para ler mais!
 
   Widget _buildErrorState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.menu_book, size: 60, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text("Devocional de hoje carregando...", style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _fetchDailyDevotional,
-            child: const Text("Tentar Novamente"),
-          )
-        ],
+      child: ElevatedButton(
+        onPressed: _fetchDailyDevotional,
+        child: const Text("Tentar Novamente"),
       ),
     );
   }
 }
 
+// ... _SectionHeader (Mantenha igual) ...
 class _SectionHeader extends StatelessWidget {
   final IconData icon;
   final String title;

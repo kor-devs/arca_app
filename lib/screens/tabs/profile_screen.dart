@@ -8,6 +8,7 @@ import 'edit_profile_screen.dart';
 import 'favorites_screen.dart';
 import 'notes_screen.dart';
 import '../main_screen.dart'; 
+import 'completed_devotionals_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -79,6 +80,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         ),
       ),
+    );
+  }
+
+  void _navigateToCompletedDevotionals() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const CompletedDevotionalsScreen()),
     );
   }
 
@@ -160,6 +168,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: const Text("Minhas Notas"),
             trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
             onTap: _navigateToNotes, 
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.menu_book_rounded, color: arcaOrange), 
+            title: const Text("Minhas Devocionais"),
+            trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+            onTap: _navigateToCompletedDevotionals, 
           ),
           
           const Divider(),
