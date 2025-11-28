@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import '../../main.dart'; // Para acessar 'supabase'
 import '../../constants.dart';
 
@@ -75,30 +76,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       // Se o usuário escolheu uma nova imagem
       if (_pickedImage != null) {
-        final imageFile = File(_pickedImage!.path);
         final imageExtension = _pickedImage!.path.split('.').last.toLowerCase();
-        
-        // Caminho fixo para substituir o anterior
         final String imagePath = '${user.id}/avatar.$imageExtension';
 
-        // 1. Faz o Upload (sobrescrevendo o anterior)
-        await supabase.storage.from('avatars').upload(
+        // [CORREÇÃO WEB/MOBILE]
+        // Lemos os bytes do arquivo (funciona em Web e Mobile)
+        final bytes = await _pickedImage!.readAsBytes();
+
+        // Usamos uploadBinary em vez de upload (que exige File)
+        await supabase.storage.from('avatars').uploadBinary(
           imagePath,
-          imageFile,
+          bytes,
           fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
         );
 
-        // 2. Pega a URL base
+        // Pega a URL base
         final String baseUrl = supabase.storage.from('avatars').getPublicUrl(imagePath);
 
-        // 3. [O PULO DO GATO] Adiciona um timestamp no final da URL
-        // Isso força o Flutter a baixar a imagem nova, pois a URL mudou (ex: avatar.jpg?t=123456)
+        // Adiciona timestamp para quebrar o cache
         newAvatarUrl = "$baseUrl?t=${DateTime.now().millisecondsSinceEpoch}";
       }
 
       final newName = _nameController.text.trim();
 
-      // 4. Atualiza os metadados do usuário com a nova URL (com timestamp)
+      // Atualiza os metadados
       await supabase.auth.updateUser(
         UserAttributes(
           data: {
@@ -113,7 +114,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         const SnackBar(content: Text('Perfil atualizado com sucesso!')),
       );
       
-      // Retorna true para quem chamou saber que houve update
       Navigator.pop(context, true);
 
     } catch (e) {
@@ -127,14 +127,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       setState(() { _isLoading = false; });
     }
   }
+
   Widget _buildAvatar() {
     if (_pickedImage != null) {
+      // [CORREÇÃO DE PREVIEW]
+      // Se for Web, usamos NetworkImage (o path é um blob url). 
+      // Se for Mobile, usamos FileImage (o path é caminho de disco).
+      ImageProvider imageProvider;
+      if (kIsWeb) {
+        imageProvider = NetworkImage(_pickedImage!.path);
+      } else {
+        imageProvider = FileImage(File(_pickedImage!.path));
+      }
+
       return CircleAvatar(
         radius: 60,
         backgroundColor: arcaPurple.withAlpha(100),
-        backgroundImage: FileImage(File(_pickedImage!.path)),
+        backgroundImage: imageProvider,
       );
     }
+    
+    // Mostra avatar atual (URL do Supabase)
     if (_avatarUrl != null && _avatarUrl!.isNotEmpty) {
       return CircleAvatar(
         radius: 60,
@@ -142,6 +155,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         backgroundImage: NetworkImage(_avatarUrl!),
       );
     }
+    
+    // Avatar padrão (Ícone)
     return CircleAvatar(
       radius: 60,
       backgroundColor: arcaPurple.withAlpha(100),

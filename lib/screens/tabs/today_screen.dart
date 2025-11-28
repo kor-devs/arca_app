@@ -1,4 +1,4 @@
-// lib/screens/tabs/today_screen.dart (V2.0 - UX/UI Moderno + Tutorial)
+// lib/screens/tabs/today_screen.dart (V3.0 - Header Compacto + Devocional)
 import 'package:arca_app/screens/main_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -8,13 +8,15 @@ import 'package:arca_app/screens/search_screen.dart';
 import 'package:screenshot/screenshot.dart'; 
 import 'package:share_plus/share_plus.dart';
 import 'dart:typed_data';
-import 'package:shared_preferences/shared_preferences.dart'; // Necessário para salvar estado do tutorial
+import 'package:shared_preferences/shared_preferences.dart'; 
 import 'dart:async';
 
 import '../../main.dart';
 import '../../models/random_verse.dart';
 import 'verse_of_the_day_card.dart';
 import '../../constants.dart';
+// Import da nova tela de Devocional
+import '../reading_flow/devotional_screen.dart';
 
 class TodayScreen extends StatefulWidget { 
   const TodayScreen({super.key});
@@ -64,6 +66,11 @@ class TodayScreenState extends State<TodayScreen> {
       "icon": "💡"
     },
     {
+      "title": "Devocionais",
+      "desc": "Um espaço de reflexão. Seu momento de intimidade com a Palavra de Deus. Um verdadeiro mergulho de intimidade com o Senhor",
+      "icon": "🧎🏽"
+    },
+    {
       "title": "Vamos Começar!",
       "desc": "Sua experiência bíblica personalizada começa agora. Boa leitura!",
       "icon": "🙏"
@@ -76,47 +83,40 @@ class TodayScreenState extends State<TodayScreen> {
     futureVerseOfTheDay = fetchVerseOfTheDay();
     _generateGreeting();
     _checkTutorialStatus();
-    // Inicia o carrossel do tutorial
     _startAutoScroll();
   }
 
   @override
   void dispose() {
-    _carouselTimer?.cancel(); // <--- Importante: Matar o timer ao sair da tela
+    _carouselTimer?.cancel(); 
     _tutorialController.dispose();
     super.dispose();
   }
 
-  // Lógica do Carrossel Automático
   void _startAutoScroll() {
-    _carouselTimer?.cancel(); // Garante que não tenha duplicidade
+    _carouselTimer?.cancel(); 
     _carouselTimer = Timer.periodic(const Duration(seconds: 7), (timer) {
       if (_tutorialController.hasClients) {
         int nextPage = _currentTutorialPage + 1;
-        
-        // Lógica do Loop Infinito
         if (nextPage >= _tutorialSteps.length) {
           nextPage = 0;
         }
-
         _tutorialController.animateToPage(
           nextPage,
-          duration: const Duration(milliseconds: 800), // Animação suave
+          duration: const Duration(milliseconds: 800), 
           curve: Curves.fastOutSlowIn,
         );
       }
     });
   }
 
-  // Verifica se o usuário já fechou o tutorial anteriormente
   Future<void> _checkTutorialStatus() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _showTutorial = prefs.getBool('show_home_tutorial') ?? true; // Padrão é mostrar
+      _showTutorial = prefs.getBool('show_home_tutorial') ?? true; 
     });
   }
 
-  // Fecha o tutorial e salva na memória
   Future<void> _dismissTutorial() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('show_home_tutorial', false);
@@ -167,37 +167,108 @@ class TodayScreenState extends State<TodayScreen> {
   }
 
   void _captureAndShareVerseCard(RandomVerse verse) async {
-    // 1. Entra no modo de compartilhamento (esconde botões, mostra logo)
-    setState(() {
-      _isSharing = true;
-    });
-
-    // 2. Aguarda um frame para o Flutter redesenhar a tela "limpa"
+    setState(() { _isSharing = true; });
     await Future.delayed(const Duration(milliseconds: 50));
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando imagem...'), duration: Duration(seconds: 1)));
     try {
-      // 3. Tira o print da tela limpa
       final Uint8List? imageBytes = await _screenshotController.capture(delay: const Duration(milliseconds: 20));
-      
-      // 4. Sai do modo de compartilhamento imediatamente (volta os botões)
-      setState(() {
-        _isSharing = false;
-      });
+      setState(() { _isSharing = false; });
       
       if (imageBytes != null) {
         final xFile = XFile.fromData(imageBytes, mimeType: 'image/png', name: 'versiculo_arca.png');
-        // Texto de acompanhamento no post        
         await Share.shareXFiles([xFile], text: "\"${verse.text}\"${verse.reference} \n \n Continue lendo na Arca: arca.kordevs.com");
         try { await supabase.rpc('increment_verse_share', params: {'p_verse_ref': verse.reference}); } catch (_) {}
       }
     } catch (e) {
       debugPrint("Erro share: $e");
-      // Garante que volta ao normal mesmo se der erro
       setState(() { _isSharing = false; });
     }
   }
 
   // --- UI COMPONENTS ---
+
+  // [NOVO] Card de Devocional Compacto e Chamativo
+  Widget _buildDevotionalEntry() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            // Navega para a tela de devocional criada anteriormente
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DevotionalScreen()),
+            );
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFF3E0), Colors.white], // Leve tom laranja/branco
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: arcaOrange.withOpacity(0.2)),
+              boxShadow: [
+                BoxShadow(
+                  color: arcaOrange.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4)
+                )
+              ]
+            ),
+            child: Row(
+              children: [
+                // Ícone de Destaque
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: arcaOrange.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.menu_book_rounded, color: arcaOrange, size: 24),
+                ),
+                const SizedBox(width: 16),
+                
+                // Textos
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "DEVOCIONAL DE HOJE",
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: arcaOrange,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "alimento para a alma", // Poderia ser dinâmico com o título do dia
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Seta indicativa
+                const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildTutorialCard() {
     if (!_showTutorial) return const SizedBox.shrink();
@@ -205,8 +276,8 @@ class TodayScreenState extends State<TodayScreen> {
     return Column(
       children: [
         Container(
-          margin: const EdgeInsets.only(bottom: 24),
-          height: 140,
+          margin: const EdgeInsets.only(bottom: 20), // Margem reduzida (era 24)
+          height: 130, // Altura reduzida (era 140)
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color.fromARGB(146, 233, 182, 255), arcaWhite],
@@ -224,14 +295,11 @@ class TodayScreenState extends State<TodayScreen> {
           ),
           child: Stack(
             children: [
-              // Listener detecta interação do usuário para pausar o carrossel
               Listener(
                 onPointerDown: (_) {
-                  // Usuário tocou: para o timer
                   _carouselTimer?.cancel();
                 },
                 onPointerUp: (_) {
-                  // Usuário soltou: reinicia a contagem
                   _startAutoScroll();
                 },
                 child: PageView.builder(
@@ -240,12 +308,12 @@ class TodayScreenState extends State<TodayScreen> {
                   onPageChanged: (index) => setState(() => _currentTutorialPage = index),
                   itemBuilder: (context, index) {
                     return Padding(
-                      padding: const EdgeInsets.all(16.0),
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                       child: Row(
                         children: [
                           Text(_tutorialSteps[index]['icon']!,
-                              style: const TextStyle(fontSize: 40)),
-                          const SizedBox(width: 16),
+                              style: const TextStyle(fontSize: 36)), // Ícone levemente menor
+                          const SizedBox(width: 14),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,12 +322,12 @@ class TodayScreenState extends State<TodayScreen> {
                                 Text(_tutorialSteps[index]['title']!,
                                     style: const TextStyle(
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 16,
+                                        fontSize: 15, // Fonte ajustada
                                         color: arcaPurple)),
                                 const SizedBox(height: 4),
                                 Text(_tutorialSteps[index]['desc']!,
                                     style: TextStyle(
-                                        fontSize: 13,
+                                        fontSize: 12, // Fonte ajustada
                                         color: Colors.grey[700],
                                         height: 1.2)),
                               ],
@@ -272,19 +340,19 @@ class TodayScreenState extends State<TodayScreen> {
                 ),
               ),
               
-              // Botão Fechar (X)
               Positioned(
-                top: 8,
-                right: 8,
+                top: 6,
+                right: 6,
                 child: IconButton(
-                  icon: Icon(Icons.close, size: 20, color: Colors.grey[400]),
+                  padding: EdgeInsets.zero, // Remove padding interno para ficar mais compacto
+                  constraints: const BoxConstraints(),
+                  icon: Icon(Icons.close, size: 18, color: Colors.grey[400]),
                   onPressed: _dismissTutorial,
                 ),
               ),
               
-              // Indicador de Páginas (Bolinhas)
               Positioned(
-                bottom: 12,
+                bottom: 10,
                 left: 0,
                 right: 0,
                 child: Row(
@@ -293,8 +361,8 @@ class TodayScreenState extends State<TodayScreen> {
                     return AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: _currentTutorialPage == index ? 20 : 6, // Animação de largura
-                      height: 6,
+                      width: _currentTutorialPage == index ? 16 : 5,
+                      height: 5,
                       decoration: BoxDecoration(
                         color: _currentTutorialPage == index
                             ? arcaPurple
@@ -314,16 +382,16 @@ class TodayScreenState extends State<TodayScreen> {
 
   Widget _buildSearchBar() {
     return Container(
-      height: 55, // Altura fixa e confortável
+      height: 50, // Altura reduzida (era 55)
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: arcaWhite,
-        borderRadius: BorderRadius.circular(16), // Bordas mais arredondadas
+        borderRadius: BorderRadius.circular(25), // Mais arredondado (Pill shape)
         boxShadow: [
           BoxShadow(
-            color: arcaPurple.withOpacity(0.25), // Sombra colorida (mais moderna)
-            blurRadius: 15,
-            offset: const Offset(0, 8), // Sombra deslocada para baixo (elevação)
+            color: arcaPurple.withOpacity(0.20),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           )
         ],
       ),
@@ -331,22 +399,25 @@ class TodayScreenState extends State<TodayScreen> {
         child: TextField(
           controller: _homeSearchController,
           textInputAction: TextInputAction.search,
-          style: const TextStyle(fontSize: 16, color: Colors.black87),
+          textAlignVertical: TextAlignVertical.center,
+          style: const TextStyle(fontSize: 15, color: Colors.black87),
           decoration: InputDecoration(
             isDense: true,
             border: InputBorder.none,
-            prefixIcon: const Icon(Icons.search, color: arcaPurple, size: 26),
-            suffixIcon: IconButton( // Ação clara de busca
-               icon: const Icon(Icons.arrow_forward_ios_rounded, color: arcaOrange, size: 18),
+            prefixIcon: const Icon(Icons.search, color: arcaPurple, size: 22),
+            suffixIcon: IconButton(
+               padding: EdgeInsets.zero,
+               constraints: const BoxConstraints(),
+               icon: const Icon(Icons.arrow_forward_ios_rounded, color: arcaOrange, size: 16),
                onPressed: () {
                  if (_homeSearchController.text.isNotEmpty) {
                     _triggerSearch(_homeSearchController.text);
                  }
                },
             ),
-            contentPadding: const EdgeInsets.all(15),
-            hintText: "Busque por livro, capítulo ou palavra-chave",
-            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
+            contentPadding: EdgeInsets.zero,
+            hintText: "Busque livro, tema ou palavra...",
+            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
           ),
           onSubmitted: (query) { 
              if (query.isNotEmpty) {
@@ -366,7 +437,7 @@ class TodayScreenState extends State<TodayScreen> {
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent, // Moderno
+      backgroundColor: Colors.transparent,
       builder: (context) => SearchScreen(returnResult: true, initialQuery: query),
     );
 
@@ -383,14 +454,15 @@ class TodayScreenState extends State<TodayScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Título reduzido e com menos padding
         const Padding(
-          padding: EdgeInsets.only(left: 4.0, bottom: 9.0),
+          padding: EdgeInsets.only(left: 4.0, bottom: 8.0),
           child: Text(
             "VERSÍCULO DO DIA",
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11, // Fonte menor
               fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
+              letterSpacing: 1.0,
               color: arcaPurple,
             ),
           ),
@@ -416,7 +488,7 @@ class TodayScreenState extends State<TodayScreen> {
                 child: Container(
                   decoration: BoxDecoration(
                      borderRadius: BorderRadius.circular(16),
-                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0,5))]
+                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 10, offset: const Offset(0,4))]
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
@@ -438,20 +510,18 @@ class TodayScreenState extends State<TodayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // LAYOUT MODERNO: Header Gradiente + Corpo Curvo + Elementos Flutuantes
-    const double headerHeight = 260.0; 
+    // --- UX UPGRADE: Header mais compacto ---
+    const double headerHeight = 200.0; // Reduzido de 260 para 200
 
     return Scaffold(
-      backgroundColor: arcaWhite, // Fundo geral branco
+      backgroundColor: arcaWhite, 
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // --- HEADER & SEARCH STACK ---
             Stack(
-              clipBehavior: Clip.none, // Permite que a SearchBar "vaze" para fora do header
+              clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // 1. Fundo Roxo com Gradiente (Mais Profundidade)
                 Container(
                   height: headerHeight,
                   width: double.infinity,
@@ -459,7 +529,7 @@ class TodayScreenState extends State<TodayScreen> {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [Color.fromARGB(255, 82, 31, 104), arcaPurple], // Gradiente roxo rico
+                      colors: [Color.fromARGB(255, 82, 31, 104), arcaPurple], 
                     ),
                     borderRadius: BorderRadius.only(
                       bottomLeft: Radius.circular(30),
@@ -467,10 +537,11 @@ class TodayScreenState extends State<TodayScreen> {
                     ),
                   ),
                   child: SafeArea(
+                    // Padding Bottom reduzido drasticamente para subir a busca
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(30, 25, 30, 80), // Padding bottom grande para caber a busca
+                      padding: const EdgeInsets.fromLTRB(24, 10, 24, 50), 
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center, // Centraliza verticalmente
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Column(
@@ -480,16 +551,15 @@ class TodayScreenState extends State<TodayScreen> {
                               Text(
                                 _greetingMessage,
                                 style: const TextStyle(
-                                  fontSize: 20,
-                                  color: Color.fromARGB(183, 250, 250, 250),
+                                  fontSize: 16,
+                                  color: Color.fromARGB(220, 250, 250, 250),
                                   fontWeight: FontWeight.w400,
                                 ),
                               ),
-                              const SizedBox(height: 1),
                               Text(
                                 _userName,
                                 style: const TextStyle(
-                                  fontSize: 40,
+                                  fontSize: 28, // Fonte reduzida de 40 para 28
                                   fontWeight: FontWeight.w800,
                                   color: arcaWhite,
                                   letterSpacing: -0.5,
@@ -497,16 +567,16 @@ class TodayScreenState extends State<TodayScreen> {
                               ),
                             ],
                           ),
-                          // Logo com sombra sutil
+                          // Logo reduzido
                           Container(
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15)]
+                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)]
                             ),
                             child: Image.asset(
                               'assets/images/arca_logo_circle.png',
-                              width: 100,
-                              height: 100,
+                              width: 60, // Reduzido de 100 para 60
+                              height: 60,
                             ),
                           ),
                         ],
@@ -515,10 +585,9 @@ class TodayScreenState extends State<TodayScreen> {
                   ),
                 ),
 
-                // 2. Barra de Busca "Flutuante" (Floating Search Bar)
-                // Posicionada na borda inferior do Header
+                // Barra de Busca subiu junto com o Header
                 Positioned(
-                  bottom: -25, // Metade dentro, metade fora (Overlap)
+                  bottom: -25, 
                   left: 24,
                   right: 24,
                   child: _buildSearchBar(),
@@ -526,21 +595,22 @@ class TodayScreenState extends State<TodayScreen> {
               ],
             ),
 
-            // --- CORPO DA TELA ---
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24.0),
               child: Column(
                 children: [
-                  const SizedBox(height: 50), // Espaço para compensar a barra de busca flutuante
+                  const SizedBox(height: 45), // Espaço reduzido
 
-                  // 3. Tutorial (Novo Recurso)
-                  // Só aparece se _showTutorial for true
+                  // 1. Tutorial (Se ativo)
                   _buildTutorialCard(),
+                  
+                  // 2. [NOVO] Devocional (Logo abaixo do tutorial ou no topo)
+                  _buildDevotionalEntry(),
 
-                  // 4. Versículo do Dia
+                  // 3. Versículo
                   _buildVerseOfTheDayCard(),
 
-                  const SizedBox(height: 40), // Espaço final
+                  const SizedBox(height: 30), // Padding final
                 ],
               ),
             ),
