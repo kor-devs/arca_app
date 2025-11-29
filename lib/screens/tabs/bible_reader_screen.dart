@@ -1,10 +1,11 @@
-// lib/screens/tabs/bible_reader_screen.dart
+// lib/screens/tabs/bible_reader_screen.dart (V3.1 - Completo com Share e Menu UX)
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async'; 
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart'; // Importante para o Compartilhar
 import 'package:arca_app/screens/search_screen.dart';
 import 'package:flutter/services.dart';
 import '../main_screen.dart';
@@ -43,6 +44,14 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
   String? _currentBookName;
   int? _currentChapter;
   
+  // Controle de Versões
+  String _currentVersion = 'nvi'; 
+  final Map<String, String> _availableVersions = {
+    'nvi': 'Nova Versão Internacional',
+    'acf': 'Almeida Corrigida Fiel',
+    'aa': 'Almeida Atualizada',
+  };
+
   Map<int, VerseNote> _notesMap = {};
   int? _highlightedVerseIndex; 
 
@@ -105,6 +114,15 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
   @override
   void initState() {
     super.initState();
+    _initializeReader();
+  }
+
+  Future<void> _initializeReader() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentVersion = prefs.getString('bible_version') ?? 'nvi';
+    });
+
     if (widget.initialBook != null && widget.initialChapter != null) {
       loadChapter(widget.initialBook!, widget.initialChapter!, widget.initialVerseIndex);
     } else {
@@ -138,25 +156,17 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     Timer(const Duration(milliseconds: 500), () { _chapterNavLocked = false; });
     
     if (_currentBookAbbrev == null || _currentChapter == null) return;
-    debugPrint('prevChapter called: $_currentBookAbbrev $_currentChapter');
 
     if (_currentChapter! > 1) {
-      // Caso simples: Apenas volta um capítulo no mesmo livro
       await loadChapter(_currentBookAbbrev!, _currentChapter! - 1);
     } else {
-      // Caso complexo: Estamos no cap 1, precisamos ir para o livro anterior
       final currentIndex = _bibleStructure.indexWhere((b) => b['abbrev'] == _currentBookAbbrev);
-      
       if (currentIndex > 0) {
-        // Existe um livro anterior
         final prevBookData = _bibleStructure[currentIndex - 1];
         final prevBookAbbrev = prevBookData['abbrev'] as String;
         final prevBookLastChapter = prevBookData['chapters'] as int;
-        
-        // Carrega o ÚLTIMO capítulo do livro anterior
         await loadChapter(prevBookAbbrev, prevBookLastChapter);
       } else {
-        // Estamos em Gênesis 1
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Você está no início da Bíblia')));
         }
@@ -170,28 +180,21 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     Timer(const Duration(milliseconds: 500), () { _chapterNavLocked = false; });
     
     if (_currentBookAbbrev == null || _currentChapter == null) return;
-    debugPrint('nextChapter called: $_currentBookAbbrev $_currentChapter');
 
     final currentBookData = _bibleStructure.firstWhere(
       (b) => b['abbrev'] == _currentBookAbbrev, 
-      orElse: () => {'chapters': 999} // Fallback
+      orElse: () => {'chapters': 999}
     );
     final maxChapters = currentBookData['chapters'] as int;
 
     if (_currentChapter! < maxChapters) {
-      // Caso simples: Avança um capítulo no mesmo livro
       await loadChapter(_currentBookAbbrev!, _currentChapter! + 1);
     } else {
-      // Caso complexo: Estamos no último capítulo, vamos para o próximo livro
       final currentIndex = _bibleStructure.indexWhere((b) => b['abbrev'] == _currentBookAbbrev);
-      
       if (currentIndex != -1 && currentIndex < _bibleStructure.length - 1) {
-        // Existe um próximo livro
         final nextBookAbbrev = _bibleStructure[currentIndex + 1]['abbrev'] as String;
-        // Carrega o PRIMEIRO capítulo do próximo livro
         await loadChapter(nextBookAbbrev, 1);
       } else {
-        // Estamos em Apocalipse 22
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Você finalizou a leitura da Bíblia!')));
         }
@@ -206,7 +209,7 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     });
 
     try {
-      final url = "$apiUrl/chapter/$abbrev/$chapter";
+      final url = "$apiUrl/$_currentVersion/$abbrev/$chapter";
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
@@ -329,15 +332,14 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
 
       if (mounted) {
         setState(() {
-          _favoriteVerseNumbers.clear(); // 1. Limpa os antigos
-          _favoriteVerseNumbers.addAll(newFavorites); // 2. Adiciona os novos (ou fica vazio)
+          _favoriteVerseNumbers.clear();
+          _favoriteVerseNumbers.addAll(newFavorites);
           _isLoadingFavorites = false;
         });
       }
       
     } catch (e) {
       debugPrint("Erro ao carregar favoritos: $e");
-      // Mesmo com erro, removemos o loading
       if (mounted) {
         setState(() { _isLoadingFavorites = false; });
       }
@@ -381,7 +383,226 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     }
   }
 
+  // --- [NOVO] FUNÇÃO DE COMPARTILHAR ---
+  void _shareVerse(VerseItem verse) {
+    if (_currentBookName == null || _currentChapter == null) return;
+    
+    // Formato: "Texto" - Livro Cap:Verso (Versão) \n Link
+    final String textToShare = """
+"${verse.text}"
+
+${_currentBookName} ${_currentChapter}:${verse.number} (${_currentVersion.toUpperCase()})
+
+Continue a leitura na Arca: https://arca.kordevs.com
+""";
+    
+    Share.share(textToShare);
+  }
+
+  // --- [NOVO] MENU DE CONTEXTO DO VERSÍCULO (UX PATTERN) ---
+  void _showVerseOptions(VerseItem verse) {
+    final bool isFavorite = _favoriteVerseNumbers.contains(verse.number);
+    final bool hasNote = _notesMap.containsKey(verse.number);
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header do Menu
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40, height: 4, 
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))
+                    ),
+                    Text(
+                      "$_currentBookName $_currentChapter:${verse.number}",
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: arcaPurple),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              
+              // Opção 1: Anotar
+              ListTile(
+                leading: Icon(hasNote ? Icons.edit_note : Icons.note_add_outlined, color: arcaPurple),
+                title: Text(hasNote ? "Editar Anotação" : "Criar Anotação"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAddNoteModal(verse);
+                },
+              ),
+
+              // Opção 2: Favoritar
+              ListTile(
+                leading: Icon(isFavorite ? Icons.bookmark : Icons.bookmark_border, color: isFavorite ? arcaOrange : arcaPurple),
+                title: Text(isFavorite ? "Remover dos Favoritos" : "Favoritar"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _toggleFavorite(verse);
+                },
+              ),
+
+              // Opção 3: Comparar
+              ListTile(
+                leading: const Icon(Icons.compare_arrows, color: arcaPurple),
+                title: const Text("Comparar Versões"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showCompareModal(verse);
+                },
+              ),
+
+              // Opção 4: Compartilhar [NOVO]
+              ListTile(
+                leading: const Icon(Icons.share_outlined, color: arcaPurple),
+                title: const Text("Compartilhar"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _shareVerse(verse);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCompareModal(VerseItem verse) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          builder: (context, scrollController) {
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    "$_currentBookName $_currentChapter:${verse.number}", 
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(16),
+                    children: _availableVersions.entries.map((entry) {
+                      return FutureBuilder(
+                        future: http.get(Uri.parse("$apiUrl/${entry.key}/$_currentBookAbbrev/$_currentChapter")),
+                        builder: (context, snapshot) {
+                          String text = "Carregando...";
+                          if (snapshot.hasData && snapshot.data!.statusCode == 200) {
+                            try {
+                              final data = ChapterResponse.fromJson(jsonDecode(utf8.decode(snapshot.data!.bodyBytes)));
+                              final v = data.items
+                                  .whereType<VerseItem>()
+                                  .firstWhere(
+                                    (v) => v.number == verse.number, 
+                                    orElse: () => VerseItem(number: 0, text: "Não encontrado")
+                                  );
+                              text = v.text;
+                            } catch (e) {
+                              text = "Erro ao processar texto.";
+                            }
+                          } else if (snapshot.hasError) {
+                            text = "Erro ao carregar.";
+                          }
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: entry.key == _currentVersion ? arcaOrange.withOpacity(0.1) : Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: entry.key == _currentVersion ? arcaOrange : Colors.transparent),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(entry.key.toUpperCase(), style: TextStyle(color: entry.key == _currentVersion ? arcaOrange : Colors.grey[600], fontWeight: FontWeight.bold, fontSize: 14)),
+                                    Text(entry.value, style: TextStyle(color: Colors.grey[500], fontSize: 10)),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Text(text, style: const TextStyle(fontSize: 16, height: 1.4)),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showVersionPicker() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Escolha a Versão", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: arcaPurple)),
+              const SizedBox(height: 16),
+              ..._availableVersions.entries.map((entry) {
+                final isSelected = entry.key == _currentVersion;
+                return ListTile(
+                  title: Text(entry.key.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text(entry.value),
+                  trailing: isSelected ? const Icon(Icons.check_circle, color: arcaOrange) : null,
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    if (!isSelected) {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setString('bible_version', entry.key);
+                      
+                      setState(() { _currentVersion = entry.key; });
+                      if (_currentBookAbbrev != null && _currentChapter != null) {
+                        loadChapter(_currentBookAbbrev!, _currentChapter!);
+                      }
+                    }
+                  },
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _showAddNoteModal(VerseItem verse) async {
+    // ... (MANTENHA A LÓGICA DE NOTAS IDÊNTICA AO QUE VOCÊ JÁ TINHA) ...
+    // ... APENAS REMOVA O BOTÃO "COMPARAR" DE DENTRO DESTE MODAL ...
+    // ... POIS AGORA ELE ESTÁ NO MENU PRINCIPAL _showVerseOptions ...
     if (_currentBookName == null || _currentChapter == null) return;
 
     final int safeChapter = _currentChapter!;
@@ -399,12 +620,10 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     final String verseRef = "$safeBookName $safeChapter:${verse.number}";
     final existingNote = _notesMap[verse.number];
 
-    // DEFINE AS CHAVES DE RASCUNHO NO ESCOPO SUPERIOR
     final draftKey = 'draft_note_${supabase.auth.currentUser!.id}_${safeBookAbbrev}_${safeChapter}_${verse.number}';
     final draftTitleKey = 'draft_title_${supabase.auth.currentUser!.id}_${safeBookAbbrev}_${safeChapter}_${verse.number}';
     final draftTagsKey = 'draft_tags_${supabase.auth.currentUser!.id}_${safeBookAbbrev}_${safeChapter}_${verse.number}';
 
-    // populate controllers
     if (existingNote != null) {
       _noteController!.text = existingNote.noteText;
       if (existingNote.title != null) _noteTitleController!.text = existingNote.title!;
@@ -431,7 +650,6 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
       _modalDebounceTimer?.cancel();
       _modalDebounceTimer = Timer(const Duration(seconds: 2), () async {
         final prefs = await SharedPreferences.getInstance();
-        // USA AS CHAVES DEFINIDAS NO ESCOPO SUPERIOR
         await prefs.setString(draftKey, controller.text);
         await prefs.setString(draftTitleKey, titleController.text);
         await prefs.setString(draftTagsKey, tagsController.text);
@@ -524,16 +742,13 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
                     ),
                     const SizedBox(height: 12),
                     
-                    // --- BOTÕES DE AÇÃO ---
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         if (existingNote != null || _modalServerDraftId != null)
                           TextButton(
                             onPressed: () async {
-                              // DEFINE idToDelete DENTRO DO ESCOPO DO BOTÃO
                               final idToDelete = existingNote?.id ?? _modalServerDraftId;
-                              
                               final confirm = await showDialog<bool>(
                                 context: ctx2,
                                 builder: (dctx) => AlertDialog(
@@ -550,10 +765,8 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
                                 try {
                                   await supabase.from('verse_notes').delete().eq('id', idToDelete);
                                   setState(() { _notesMap.remove(verse.number); });
-                                  
                                   final mainScreenState = context.findAncestorStateOfType<MainScreenState>();
                                   mainScreenState?.refreshContent(); 
-
                                   Navigator.of(ctx2).pop();
                                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Removido')));
                                 } catch (e) {
@@ -565,13 +778,13 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
                             child: const Text('Apagar', style: TextStyle(color: Colors.red)),
                           ),
                         const SizedBox(width: 8),
+                        
                         TextButton(
                           onPressed: () => Navigator.of(ctx2).pop(),
                           child: const Text('Cancelar'),
                         ),
                         const SizedBox(width: 8),
                         
-                        // --- BOTÃO SALVAR ---
                         ElevatedButton(
                           onPressed: () async {
                             final noteText = controller.text.trim();
@@ -579,11 +792,9 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
 
                             try {
                               final tagsList = tagsController.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-                              
                               final idToUpdate = existingNote?.id ?? _modalServerDraftId;
 
                               if (idToUpdate != null) {
-                                // --- UPDATE ---
                                 await supabase.from('verse_notes').update({
                                   'note_text': noteText,
                                   'title': titleController.text.trim(),
@@ -592,7 +803,6 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
                                   'updated_at': DateTime.now().toUtc().toIso8601String(),
                                 }).eq('id', idToUpdate);
                               } else {
-                                // --- INSERT ---
                                 await supabase.from('verse_notes').insert({
                                   'user_id': supabase.auth.currentUser!.id,
                                   'book_name': safeBookName,
@@ -608,7 +818,6 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
                                 });
                               }
 
-                              // Limpa rascunhos locais
                               final prefs = await SharedPreferences.getInstance();
                               await prefs.remove(draftKey);
                               await prefs.remove(draftTitleKey);
@@ -720,7 +929,16 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
           statusBarBrightness: Brightness.light,
         ),
         title: _buildAppBarTitle(),
-        actions: [_buildSearchButton()],
+        actions: [
+          TextButton(
+            onPressed: _showVersionPicker,
+            child: Text(
+              _currentVersion.toUpperCase(),
+              style: const TextStyle(color: arcaWhite, fontWeight: FontWeight.bold),
+            ),
+          ),
+          _buildSearchButton()
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: arcaPurple))
@@ -779,7 +997,8 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
                                  duration: const Duration(milliseconds: 200),
                                  color: isHighlighted ? arcaOrange.withAlpha(128) : (isFavorite ? _favoriteHighlightColor.withAlpha(100) : Colors.transparent),
                                  child: GestureDetector(
-                                   onTap: () => _showAddNoteModal(verse),
+                                   // [MODIFICADO] AGORA ABRE O MENU DE OPÇÕES (UX)
+                                   onTap: () => _showVerseOptions(verse),
                                    onLongPress: () => _toggleFavorite(verse),
                                    child: Container(
                                      decoration: BoxDecoration(

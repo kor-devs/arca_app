@@ -142,11 +142,14 @@ class _DevotionalScreenState extends State<DevotionalScreen> {
 "${_devotional!['verse_text']}"
 _${_devotional!['verse_reference']}_
 
+📚 *O Estudo:*
+ ${_devotional!['theology_content']}
+
 💡 *Reflexão:*
 ${_devotional!['reflection_content']}
 
-Entre na Arca para ler mais!
-🔗 arca.kordvs.com
+Arca, sua companheira na jornada espiritual!
+🔗 arca.kordevs.com
 """;
     Share.share(text);
   }

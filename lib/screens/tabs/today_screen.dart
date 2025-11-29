@@ -176,7 +176,7 @@ class TodayScreenState extends State<TodayScreen> {
       
       if (imageBytes != null) {
         final xFile = XFile.fromData(imageBytes, mimeType: 'image/png', name: 'versiculo_arca.png');
-        await Share.shareXFiles([xFile], text: "\"${verse.text}\"${verse.reference} \n \n Continue lendo na Arca: arca.kordevs.com");
+        await Share.shareXFiles([xFile], text: "\"${verse.text}\"${verse.reference} \n \n Continue a leitura na Arca: arca.kordevs.com");
         try { await supabase.rpc('increment_verse_share', params: {'p_verse_ref': verse.reference}); } catch (_) {}
       }
     } catch (e) {
