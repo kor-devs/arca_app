@@ -49,7 +49,6 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
   final Map<String, String> _availableVersions = {
     'nvi': 'Nova Versão Internacional',
     'acf': 'Almeida Corrigida Fiel',
-    'aa': 'Almeida Atualizada',
   };
 
   Map<int, VerseNote> _notesMap = {};
