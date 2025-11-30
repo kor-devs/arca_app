@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants.dart';
 
 // IMPORTS DAS TELAS DE DESTINO
-// (Verifique se os caminhos estão corretos para o seu projeto)
 import '../screens/main_screen.dart';
 import '../screens/login_screen.dart'; 
 
@@ -44,31 +43,24 @@ class _SplashScreenState extends State<SplashScreen> {
     });
   }
 
-  // --- FUNÇÃO DE NAVEGAÇÃO ---
   Future<void> _checkAuthAndNavigate() async {
-    // 1. Garante que a splash fique visível por pelo menos 4 segundos
-    // (Tempo suficiente para ler as palavras "Aliança", "Propósito", "Atitude")
+    // Mantém a splash por 4 segundos para branding
     await Future.delayed(const Duration(milliseconds: 4000));
 
     if (!mounted) return;
 
-    // 2. Verifica se já existe usuário logado no Supabase
     final session = Supabase.instance.client.auth.currentSession;
 
-    // 3. Navega para a tela correta
     if (session != null) {
-      // Usuário logado -> Vai para a Home (MainScreen)
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const MainScreen()),
       );
     } else {
-      // Ninguém logado -> Vai para o Login
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const LoginScreen()),
       );
     }
   }
-  // ---------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +68,7 @@ class _SplashScreenState extends State<SplashScreen> {
       backgroundColor: arcaPurple,
       body: Stack(
         children: [
+          // Fundo Gradiente
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -88,6 +81,8 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             ),
           ),
+          
+          // Conteúdo Central
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -103,7 +98,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     backgroundColor: Colors.transparent, 
                     child: ClipOval(
                       child: Image.asset(
-                        'assets/images/arca_logo_circle.png', // Confirme se é logo.jpg ou arca_logo_circle.png
+                        'assets/images/arca_logo_circle.png', 
                         height: 160,
                         width: 160,
                         fit: BoxFit.cover, 
@@ -143,6 +138,45 @@ class _SplashScreenState extends State<SplashScreen> {
               ],
             ),
           ),
+
+          // --- [NOVO] RODAPÉ POWERED BY KORDEVS ---
+          Positioned(
+            bottom: 40, // Subi um pouco para dar respiro
+            left: 0,
+            right: 0,
+            child: Column(
+              children: [
+                Text(
+                  "Powered by",
+                  style: TextStyle(
+                    color: arcaWhite.withOpacity(0.6),
+                    fontSize: 10,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  "KorDevs",
+                  style: TextStyle(
+                    color: arcaWhite.withOpacity(0.9),
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8), // Espaço entre a marca e a versão
+                Text(
+                  "v1.0.25", // Lembre-se de atualizar aqui quando mudar no pubspec
+                  style: TextStyle(
+                    color: arcaWhite.withOpacity(0.4), // Bem sutil
+                    fontSize: 10,
+                    fontFamily: 'Monospace', // Fonte técnica fica legal para versão
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // -----------------------------------------
         ],
       ),
     );

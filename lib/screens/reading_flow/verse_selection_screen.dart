@@ -1,9 +1,10 @@
-// lib/screens/reading_flow/verse_selection_screen.dart (V1.50 - Corrigido para "items")
+// lib/screens/reading_flow/verse_selection_screen.dart (V2.0 - Fix URL da API)
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart'; // Import necessário
 import '../../main.dart';
-import '../../models/chapter_response.dart'; // (Corretamente) Usa o V1.49.1 (Custo Zero)
+import '../../models/chapter_response.dart'; 
 import '../tabs/bible_reader_screen.dart'; 
 
 class VerseSelectionScreen extends StatefulWidget {
@@ -24,16 +25,26 @@ class VerseSelectionScreen extends StatefulWidget {
 
 class _VerseSelectionScreenState extends State<VerseSelectionScreen> {
   late Future<ChapterResponse> _chapterDataFuture;
+  // Variável para guardar a versão (padrão nvi)
+  String _currentVersion = 'nvi';
 
   @override
   void initState() {
     super.initState();
-    _chapterDataFuture = _fetchChapterData();
+    // Inicia o processo: 1. Ler Versão -> 2. Buscar Dados
+    _chapterDataFuture = _loadVersionAndFetchData();
   }
 
-  Future<ChapterResponse> _fetchChapterData() async {
+  Future<ChapterResponse> _loadVersionAndFetchData() async {
     try {
-      final url = "$apiUrl/chapter/${widget.bookAbbrev}/${widget.chapterNumber}";
+      // 1. Ler a versão preferida do usuário
+      final prefs = await SharedPreferences.getInstance();
+      _currentVersion = prefs.getString('bible_version') ?? 'nvi';
+
+      // 2. Montar a URL correta com a versão
+      // [CORREÇÃO]: Agora inclui a versão na rota (ex: /api/nvi/gn/1)
+      final url = "$apiUrl/$_currentVersion/${widget.bookAbbrev}/${widget.chapterNumber}";
+      
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
@@ -67,14 +78,9 @@ class _VerseSelectionScreenState extends State<VerseSelectionScreen> {
 
           final chapterData = snapshot.data!;
           
-          // --- A CORREÇÃO (V1.50 - Usa '.items') ---
-          // (Filtra (corretamente) a lista 'items' (V1.48) (Custo Zero)
-          // para (corretamente) pegar *apenas*
-          // os 'VerseItem' (V1.49) (Custo Zero))
           final List<VerseItem> verses = chapterData.items
               .whereType<VerseItem>() 
               .toList();
-          // --- FIM DA CORREÇÃO ---
 
           return GridView.builder(
             padding: const EdgeInsets.all(16.0),
@@ -83,7 +89,6 @@ class _VerseSelectionScreenState extends State<VerseSelectionScreen> {
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
             ),
-            // (Corretamente) usa a lista 'verses' (V1.50) (Custo Zero) filtrada)
             itemCount: verses.length, 
             itemBuilder: (context, index) {
               final verse = verses[index];
@@ -100,7 +105,7 @@ class _VerseSelectionScreenState extends State<VerseSelectionScreen> {
                         builder: (context) => BibleReaderScreen(
                           initialBook: chapterData.bookAbbrev,
                           initialChapter: chapterData.chapterNumber,
-                          initialVerseIndex: verse.number, // <--- SEM O -1 (Fix do Scroll)
+                          initialVerseIndex: verse.number, 
                         ),
                       ),
                       (Route<dynamic> route) => route.isFirst,
