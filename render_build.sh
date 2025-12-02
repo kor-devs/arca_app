@@ -47,6 +47,6 @@ flutter pub get
 
 echo "==> Compilando o App (Build)..."
 # Adicionei --no-tree-shake-icons para evitar um bug comum de ícones sumindo na web
-flutter build web --web-renderer canvaskit --release --no-tree-shake-icons
+flutter build web --release --no-tree-shake-icons
 
 echo "==> Build completo!"
