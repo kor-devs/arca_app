@@ -1,11 +1,11 @@
-// lib/screens/tabs/bible_reader_screen.dart (V3.1 - Completo com Share e Menu UX)
+// lib/screens/tabs/bible_reader_screen.dart (V4.1 - Unificado: UX + Clube + Versões)
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async'; 
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:share_plus/share_plus.dart'; // Importante para o Compartilhar
+import 'package:share_plus/share_plus.dart'; 
 import 'package:arca_app/screens/search_screen.dart';
 import 'package:flutter/services.dart';
 import '../main_screen.dart';
@@ -44,11 +44,19 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
   String? _currentBookName;
   int? _currentChapter;
   
+  // --- CONTEXTO DE PLANO DE LEITURA ---
+  int? _activePlanId;
+  int? _activeDayNumber;
+  bool _isCompletingPlan = false;
+  // ------------------------------------
+
   // Controle de Versões
   String _currentVersion = 'nvi'; 
   final Map<String, String> _availableVersions = {
     'nvi': 'Nova Versão Internacional',
     'acf': 'Almeida Corrigida Fiel',
+    'ar': 'Almeida Revisada',
+    'kjv': 'Versão King James'
   };
 
   Map<int, VerseNote> _notesMap = {};
@@ -96,7 +104,7 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     {'abbrev': 'ag', 'chapters': 2}, {'abbrev': 'zc', 'chapters': 14},
     {'abbrev': 'ml', 'chapters': 4}, {'abbrev': 'mt', 'chapters': 28},
     {'abbrev': 'mc', 'chapters': 16}, {'abbrev': 'lc', 'chapters': 24},
-    {'abbrev': 'jo', 'chapters': 21}, {'abbrev': 'atos', 'chapters': 28},
+    {'abbrev': 'jo', 'chapters': 21}, {'abbrev': 'at', 'chapters': 28},
     {'abbrev': 'rm', 'chapters': 16}, {'abbrev': '1co', 'chapters': 16},
     {'abbrev': '2co', 'chapters': 13}, {'abbrev': 'gl', 'chapters': 6},
     {'abbrev': 'ef', 'chapters': 6}, {'abbrev': 'fp', 'chapters': 4},
@@ -126,6 +134,54 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
       loadChapter(widget.initialBook!, widget.initialChapter!, widget.initialVerseIndex);
     } else {
       _loadLastRead();
+    }
+  }
+
+  void exitPlanMode() {
+    if (_activePlanId != null) {
+      setState(() {
+        _activePlanId = null;
+        _activeDayNumber = null;
+      });
+    }
+  }
+
+  // --- AÇÃO: COMPLETAR LEITURA DO PLANO ---
+  Future<void> _completePlanReading() async {
+    if (_activePlanId == null || _activeDayNumber == null || _isCompletingPlan) return;
+
+    setState(() { _isCompletingPlan = true; });
+
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      // 1. Atualiza progresso
+      await supabase.from('user_active_plans').update({
+        'current_day': _activeDayNumber! + 1,
+        'last_read_at': DateTime.now().toIso8601String()
+      }).eq('id', _activePlanId!);
+
+      // 2. Incrementa Streak
+      await supabase.rpc('increment_streak', params: {'user_uuid': user.id});
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Leitura concluída! 🔥 Plano atualizado!"),
+            backgroundColor: arcaNeonGreen,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        setState(() {
+          _activePlanId = null; 
+          _activeDayNumber = null;
+          _isCompletingPlan = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Erro ao completar plano: $e");
+      if (mounted) setState(() { _isCompletingPlan = false; });
     }
   }
 
@@ -201,10 +257,17 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     }
   }
 
-  Future<void> loadChapter(String abbrev, int chapter, [int? initialVerseNumber]) async {
+  // [MODIFICADO] loadChapter aceita contexto de plano
+  Future<void> loadChapter(String abbrev, int chapter, [int? initialVerseNumber, int? planId, int? dayNumber]) async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
+      if (planId != null) _activePlanId = planId;
+      if (dayNumber != null) _activeDayNumber = dayNumber;
+      if (planId == null && dayNumber == null) {
+         _activePlanId = null;
+         _activeDayNumber = null;
+      }
     });
 
     try {
@@ -382,11 +445,10 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     }
   }
 
-  // --- [NOVO] FUNÇÃO DE COMPARTILHAR ---
+  // --- FUNÇÃO DE COMPARTILHAR ---
   void _shareVerse(VerseItem verse) {
     if (_currentBookName == null || _currentChapter == null) return;
     
-    // Formato: "Texto" - Livro Cap:Verso (Versão) \n Link
     final String textToShare = """
 "${verse.text}"
 
@@ -394,11 +456,10 @@ ${_currentBookName} ${_currentChapter}:${verse.number} (${_currentVersion.toUppe
 
 Continue a leitura na Arca: https://arca.kordevs.com
 """;
-    
     Share.share(textToShare);
   }
 
-  // --- [NOVO] MENU DE CONTEXTO DO VERSÍCULO (UX PATTERN) ---
+  // --- MENU DE CONTEXTO DO VERSÍCULO (UX PATTERN) ---
   void _showVerseOptions(VerseItem verse) {
     final bool isFavorite = _favoriteVerseNumbers.contains(verse.number);
     final bool hasNote = _notesMap.containsKey(verse.number);
@@ -411,7 +472,6 @@ Continue a leitura na Arca: https://arca.kordevs.com
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header do Menu
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16.0),
                 child: Column(
@@ -452,7 +512,7 @@ Continue a leitura na Arca: https://arca.kordevs.com
 
               // Opção 3: Comparar
               ListTile(
-                leading: const Icon(Icons.compare_arrows, color: arcaPurple),
+                leading: const Icon(Icons.compare_arrows, color: Colors.blueGrey),
                 title: const Text("Comparar Versões"),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -460,9 +520,9 @@ Continue a leitura na Arca: https://arca.kordevs.com
                 },
               ),
 
-              // Opção 4: Compartilhar [NOVO]
+              // Opção 4: Compartilhar
               ListTile(
-                leading: const Icon(Icons.share_outlined, color: arcaPurple),
+                leading: const Icon(Icons.share_outlined, color: Colors.black87),
                 title: const Text("Compartilhar"),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -599,9 +659,6 @@ Continue a leitura na Arca: https://arca.kordevs.com
   }
 
   Future<void> _showAddNoteModal(VerseItem verse) async {
-    // ... (MANTENHA A LÓGICA DE NOTAS IDÊNTICA AO QUE VOCÊ JÁ TINHA) ...
-    // ... APENAS REMOVA O BOTÃO "COMPARAR" DE DENTRO DESTE MODAL ...
-    // ... POIS AGORA ELE ESTÁ NO MENU PRINCIPAL _showVerseOptions ...
     if (_currentBookName == null || _currentChapter == null) return;
 
     final int safeChapter = _currentChapter!;
@@ -919,6 +976,9 @@ Continue a leitura na Arca: https://arca.kordevs.com
 
   @override
   Widget build(BuildContext context) {
+
+    final bool isPlanMode = _activePlanId != null;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: arcaPurple,
@@ -929,6 +989,7 @@ Continue a leitura na Arca: https://arca.kordevs.com
         ),
         title: _buildAppBarTitle(),
         actions: [
+          // Seletor de Versão
           TextButton(
             onPressed: _showVersionPicker,
             child: Text(
@@ -939,6 +1000,7 @@ Continue a leitura na Arca: https://arca.kordevs.com
           _buildSearchButton()
         ],
       ),
+      
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: arcaPurple))
           : _isLoadingFavorites
@@ -964,7 +1026,7 @@ Continue a leitura na Arca: https://arca.kordevs.com
                       _horizontalDragAccum = 0.0;
                     },
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 64.0),
+                      padding: EdgeInsets.fromLTRB(16.0, 0, 16.0, _activePlanId != null ? 80.0 : 64.0),
                       child: NotificationListener<ScrollNotification>(
                         onNotification: (notification) {
                           if (notification is ScrollUpdateNotification && notification.dragDetails != null) {
@@ -994,14 +1056,14 @@ Continue a leitura na Arca: https://arca.kordevs.com
                                
                                return AnimatedContainer(
                                  duration: const Duration(milliseconds: 200),
-                                 color: isHighlighted ? arcaOrange.withAlpha(128) : (isFavorite ? _favoriteHighlightColor.withAlpha(100) : Colors.transparent),
+                                 color: isHighlighted ? arcaOrange.withValues(alpha: 0.5) : (isFavorite ? _favoriteHighlightColor.withValues(alpha: 0.4) : Colors.transparent),
                                  child: GestureDetector(
-                                   // [MODIFICADO] AGORA ABRE O MENU DE OPÇÕES (UX)
+                                   // ABRE O MENU DE CONTEXTO
                                    onTap: () => _showVerseOptions(verse),
                                    onLongPress: () => _toggleFavorite(verse),
                                    child: Container(
                                      decoration: BoxDecoration(
-                                        color: hasNote && !isHighlighted ? arcaPurple.withAlpha(20) : Colors.transparent,
+                                        color: hasNote && !isHighlighted ? arcaPurple.withValues(alpha: 0.08) : Colors.transparent,
                                         borderRadius: BorderRadius.circular(8),
                                      ),
                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -1046,13 +1108,42 @@ Continue a leitura na Arca: https://arca.kordevs.com
                                     decoration: BoxDecoration(
                                       color: arcaWhite,
                                       borderRadius: const BorderRadius.only(topLeft: Radius.circular(18), topRight: Radius.circular(18)),
-                                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), spreadRadius: 1, blurRadius: 10, offset: const Offset(0, -3))],
+                                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), spreadRadius: 1, blurRadius: 10, offset: const Offset(0, -3))],
                                     ),
                                   ),
                                 ),
                                 Positioned(left: 12, bottom: 18, child: GestureDetector(onTap: _prevChapter, child: const SizedBox(width: 56, height: 56, child: Center(child: Icon(Icons.chevron_left, size: 28, color: arcaOrange))))),
                                 Positioned(right: 12, bottom: 18, child: GestureDetector(onTap: _nextChapter, child: const SizedBox(width: 56, height: 56, child: Center(child: Icon(Icons.chevron_right, size: 28, color: arcaOrange))))),
-                                Positioned(bottom: 16, child: ElevatedButton(onPressed: _showStudyModal, style: ElevatedButton.styleFrom(backgroundColor: arcaOrange, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))), child: const Text('Saiba mais', style: TextStyle(color: Colors.white)))),
+                                Positioned(
+                                  child: ElevatedButton(
+                                    onPressed: isPlanMode 
+                                        ? (_isCompletingPlan ? null : _completePlanReading) // Ação de Concluir
+                                        : _showStudyModal,                                  // Ação de Saiba Mais
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: isPlanMode ? arcaNeonGreen : arcaOrange,
+                                      foregroundColor: isPlanMode ? Colors.black87 : arcaWhite, // Texto preto no verde, branco no laranja
+                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                      elevation: 4,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                                    ),
+                                    child: _isCompletingPlan
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black54))
+                                      : Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (isPlanMode) const Icon(Icons.check, size: 18),
+                                            if (isPlanMode) const SizedBox(width: 6),
+                                            Text(
+                                              isPlanMode ? "CONCLUIR DIA" : "Saiba mais", 
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold, 
+                                                letterSpacing: isPlanMode ? 0.5 : 0.0
+                                              )
+                                            ),
+                                          ],
+                                        ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -1068,48 +1159,7 @@ Continue a leitura na Arca: https://arca.kordevs.com
   void _showStudyModal() {
     if (_currentBookAbbrev == null) return;
     final String abbrev = _currentBookAbbrev!;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true, 
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.8, 
-          maxChildSize: 0.9,     
-          minChildSize: 0.5,     
-          builder: (BuildContext context, ScrollController scrollController) {
-            return FutureBuilder<BookInfo>(
-              future: _bibleService.fetchBookInfo(abbrev),
-              builder: (context, snapshot) {
-                Widget content;
-                String title = _currentBookName ?? "Estudo";
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  content = const Center(child: CircularProgressIndicator(color: arcaPurple));
-                } else if (snapshot.hasError || !snapshot.hasData) {
-                  content = const Center(child: Text("Erro ao carregar dados de estudo."));
-                } else {
-                  final info = snapshot.data!;
-                  title = info.bookName; 
-                  content = _StudyInfoSheet(info: info, scrollController: scrollController);
-                }
-                return Container(
-                  decoration: const BoxDecoration(color: arcaWhite, borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20))),
-                  child: Column(
-                    children: [
-                      Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 10.0), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-                      Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0), child: Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold))),
-                      const SizedBox(height: 10),
-                      Expanded(child: content),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) { return DraggableScrollableSheet(initialChildSize: 0.8, maxChildSize: 0.9, minChildSize: 0.5, builder: (BuildContext context, ScrollController scrollController) { return FutureBuilder<BookInfo>(future: _bibleService.fetchBookInfo(abbrev), builder: (context, snapshot) { Widget content; String title = _currentBookName ?? "Estudo"; if (snapshot.connectionState == ConnectionState.waiting) { content = const Center(child: CircularProgressIndicator(color: arcaPurple)); } else if (snapshot.hasError || !snapshot.hasData) { content = const Center(child: Text("Erro ao carregar dados de estudo.")); } else { final info = snapshot.data!; title = info.bookName; content = _StudyInfoSheet(info: info, scrollController: scrollController); } return Container(decoration: const BoxDecoration(color: arcaWhite, borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20))), child: Column(children: [Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 10.0), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))), Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0), child: Text(title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold))), const SizedBox(height: 10), Expanded(child: content)])); }); }); });
   }
 }
 
@@ -1117,29 +1167,55 @@ class _StudyInfoSheet extends StatelessWidget {
   final BookInfo info;
   final ScrollController scrollController;
   const _StudyInfoSheet({required this.info, required this.scrollController});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 16.0), 
-      children: [
-        _buildStudySection(context, "Resumo", Text(info.summary ?? "N/A", style: Theme.of(context).textTheme.bodyLarge)),
-        _buildStudySection(context, "Ficha Técnica", Container(padding: const EdgeInsets.all(12.0), decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)), child: Column(children: [_buildInfoRow(context, "Autor:", info.author ?? "Desconhecido"), _buildInfoRow(context, "Data:", info.dateWritten ?? "Desconhecida"), _buildInfoRow(context, "Língua:", info.originalLanguage ?? "N/A")]))),
-        if (info.mainThemes.isNotEmpty) _buildStudySection(context, "Temas Principais", Wrap(spacing: 8.0, runSpacing: 4.0, children: info.mainThemes.map((tema) => Chip(label: Text(tema), backgroundColor: arcaPurple.withAlpha(26), labelStyle: const TextStyle(color: arcaPurple), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: arcaPurple.withAlpha(77))))).toList())),
-        _buildStudySection(context, "Contexto Histórico", Text(info.historicalContext ?? "N/A", style: Theme.of(context).textTheme.bodyLarge)),
-        _buildStudySection(context, "Curiosidades", Text(info.trivia ?? "N/A", style: Theme.of(context).textTheme.bodyLarge)),
-        if (info.crossReferences.isNotEmpty) _buildStudySection(context, "Referências Relacionadas", Column(children: info.crossReferences.map((ref) => Card(elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), margin: const EdgeInsets.symmetric(vertical: 4), child: ListTile(leading: const Icon(Icons.link_rounded, color: arcaPurple), title: Text.rich(TextSpan(style: Theme.of(context).textTheme.bodyMedium, children: [TextSpan(text: "${ref.book.toUpperCase()}: ", style: const TextStyle(fontWeight: FontWeight.bold)), TextSpan(text: ref.desc)])), onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Navegando para ${ref.book}... (não implementado)")))))).toList())),
-        const SizedBox(height: 40), 
-      ],
-    );
-  }
-
-  Widget _buildStudySection(BuildContext context, String title, Widget content) {
-    return Padding(padding: const EdgeInsets.only(bottom: 20.0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title.toUpperCase(), style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: Colors.black54, letterSpacing: 0.8)), const SizedBox(height: 10), content]));
+  
+  String _getAbbrev(String bookName) {
+    final map = {
+      'Gênesis': 'gn', 'Êxodo': 'ex', 'Levítico': 'lv', 'Números': 'nm', 'Deuteronômio': 'dt',
+      'Josué': 'js', 'Juízes': 'jz', 'Rute': 'rt', '1 Samuel': '1sm', '2 Samuel': '2sm',
+      '1 Reis': '1rs', '2 Reis': '2rs', '1 Crônicas': '1cr', '2 Crônicas': '2cr',
+      'Esdras': 'ed', 'Neemias': 'ne', 'Ester': 'et', 'Jó': 'job', 'Salmos': 'sl',
+      'Provérbios': 'pv', 'Eclesiastes': 'ec', 'Cantares': 'ct', 'Isaías': 'is',
+      'Jeremias': 'jr', 'Lamentações': 'lm', 'Ezequiel': 'ez', 'Daniel': 'dn',
+      'Oseias': 'os', 'Joel': 'jl', 'Amós': 'am', 'Obadias': 'ob', 'Jonas': 'jn',
+      'Miqueias': 'mq', 'Naum': 'na', 'Habacuque': 'hc', 'Sofonias': 'sf',
+      'Ageu': 'ag', 'Zacarias': 'zc', 'Malaquias': 'ml', 'Mateus': 'mt', 'Marcos': 'mc',
+      'Lucas': 'lc', 'João': 'jo', 'Atos': 'at', 'Romanos': 'rm', '1 Coríntios': '1co',
+      '2 Coríntios': '2co', 'Gálatas': 'gl', 'Efésios': 'ef', 'Filipenses': 'fp',
+      'Colossenses': 'cl', '1 Tessalonicenses': '1ts', '2 Tessalonicenses': '2ts',
+      '1 Timóteo': '1tm', '2 Timóteo': '2tm', 'Tito': 'tt', 'Filemom': 'fm',
+      'Hebreus': 'hb', 'Tiago': 'tg', '1 Pedro': '1pe', '2 Pedro': '2pe',
+      '1 João': '1jo', '2 João': '2jo', '3 João': '3jo', 'Judas': 'jd', 'Apocalipse': 'ap'
+    };
+    // Tenta encontrar pelo nome exato ou retorna o próprio nome minúsculo (fallback)
+    return map[bookName] ?? map[bookName.split(' ').first] ?? bookName.toLowerCase().substring(0, 2);
   }
   
-  Widget _buildInfoRow(BuildContext context, String label, String value) {
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 4.0), child: Text.rich(TextSpan(style: Theme.of(context).textTheme.bodyLarge, children: [TextSpan(text: "$label ", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)), TextSpan(text: value, style: const TextStyle(color: Colors.black54))])));
+  void _navigateToRef(BuildContext context, String refString) {
+    // Ex: "Romanos 5" -> book="Romanos", chapter="5"
+    try {
+      final parts = refString.trim().split(' ');
+      final chapter = int.parse(parts.last);
+      final bookName = parts.sublist(0, parts.length - 1).join(' ');
+      final abbrev = _getAbbrev(bookName);
+
+      // Fecha o modal
+      Navigator.pop(context); 
+      // Fecha o bottom sheet pai (se houver)
+      // Navigator.pop(context); 
+
+      final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+      if (mainScreen != null) {
+        mainScreen.jumpToBible(abbrev, chapter, 1);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir esta referência.")));
+    }
   }
+  
+  @override
+  Widget build(BuildContext context) {
+    return ListView(controller: scrollController, padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 16.0), children: [_buildStudySection(context, "Resumo", Text(info.summary ?? "N/A", style: Theme.of(context).textTheme.bodyLarge)), _buildStudySection(context, "Ficha Técnica", Container(padding: const EdgeInsets.all(12.0), decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)), child: Column(children: [_buildInfoRow(context, "Autor:", info.author ?? "Desconhecido"), _buildInfoRow(context, "Data:", info.dateWritten ?? "Desconhecida"), _buildInfoRow(context, "Língua:", info.originalLanguage ?? "N/A")]))), if (info.mainThemes.isNotEmpty) _buildStudySection(context, "Temas Principais", Wrap(spacing: 8.0, runSpacing: 4.0, children: info.mainThemes.map((tema) => Chip(label: Text(tema), backgroundColor: arcaPurple.withValues(alpha: 0.1), labelStyle: const TextStyle(color: arcaPurple), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: arcaPurple.withValues(alpha: 0.3))))).toList())), _buildStudySection(context, "Contexto Histórico", Text(info.historicalContext ?? "N/A", style: Theme.of(context).textTheme.bodyLarge)), _buildStudySection(context, "Curiosidades", Text(info.trivia ?? "N/A", style: Theme.of(context).textTheme.bodyLarge)), if (info.crossReferences.isNotEmpty) _buildStudySection(context, "Referências Relacionadas", Column(children: info.crossReferences.map((ref) => Card(elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), margin: const EdgeInsets.symmetric(vertical: 4), child: ListTile(leading: const Icon(Icons.link_rounded, color: arcaPurple), title: Text.rich(TextSpan(style: Theme.of(context).textTheme.bodyMedium, children: [TextSpan(text: "${ref.book.toUpperCase()}: ", style: const TextStyle(fontWeight: FontWeight.bold)), TextSpan(text: ref.desc)])), onTap: () => _navigateToRef(context, ref.book)))).toList())), const SizedBox(height: 40)]);
+  }
+  Widget _buildStudySection(BuildContext context, String title, Widget content) { return Padding(padding: const EdgeInsets.only(bottom: 20.0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title.toUpperCase(), style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: Colors.black54, letterSpacing: 0.8)), const SizedBox(height: 10), content])); }
+  Widget _buildInfoRow(BuildContext context, String label, String value) { return Padding(padding: const EdgeInsets.symmetric(vertical: 4.0), child: Text.rich(TextSpan(style: Theme.of(context).textTheme.bodyLarge, children: [TextSpan(text: "$label ", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)), TextSpan(text: value, style: const TextStyle(color: Colors.black54))]))); }
 }

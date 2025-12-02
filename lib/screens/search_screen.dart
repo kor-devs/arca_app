@@ -1,21 +1,19 @@
-// lib/screens/search_screen.dart (V1.51 - Mantém V1.37 + Corrige V1.49)
+// lib/screens/search_screen.dart (V5.0 - Fix URL Versão e Navegação Completa)
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart';
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart'; // Adicionado para ler a versão
 import '../main.dart'; 
 import '../constants.dart';
 import '../models/search_verse.dart';
-import '../models/chapter_response.dart'; 
+//import '../models/chapter_response.dart'; 
 
-
-import 'reading_flow/reading_screen.dart'; 
+// Imports de navegação
 import 'reading_flow/verse_selection_screen.dart';
-
-
+import 'main_screen.dart'; // Para acessar MainScreenState
 
 class SearchScreen extends StatefulWidget {
-  // (Lógica V1.37 (Custo Zero) 100% MANTIDA)
   final String? initialQuery; 
   final bool returnResult; 
   const SearchScreen({super.key, this.initialQuery, this.returnResult = false});
@@ -25,7 +23,6 @@ class SearchScreen extends StatefulWidget {
 }
 
 class SearchScreenState extends State<SearchScreen> {
-  // (Estados V1.37 (Custo Zero) 100% MANTIDOS)
   final TextEditingController _searchController = TextEditingController();
 
   String _statusMessage = "Palavra (ex: 'Deus') ou Referência (ex: 'Genesis 1:1')";
@@ -34,11 +31,14 @@ class SearchScreenState extends State<SearchScreen> {
   final Dio _dio = Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 300),
     ),);
-  // suggestions populated from the DB table `search_suggestions`
+  
   List<String> _suggestions = [];
   bool _loadingSuggestions = false;
 
   final Map<String, String> _abbrevToBookNameMap = {};
+
+  // Variável para controlar a versão da Bíblia (Padrão NVI)
+  String _currentVersion = 'nvi';
 
   static final Map<String, String> _bookTranslationMap = {
     'genesis': 'gn', 'gênesis': 'gn',
@@ -111,9 +111,9 @@ class SearchScreenState extends State<SearchScreen> {
 
   @override
   void initState() {
-    // (Lógica V1.37 (Custo Zero) 100% MANTIDA)
     super.initState();
     _populateAbbrevToNameMap();
+    _loadVersionPreference(); // Carrega a versão salva
 
     if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
       _searchController.text = widget.initialQuery!;
@@ -122,32 +122,29 @@ class SearchScreenState extends State<SearchScreen> {
       });
     }
 
-    // load suggestions (best-effort)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSuggestions();
     });
-
-    // NOTE: não abrimos o modal automaticamente aqui para evitar duplicação
-    // (se quiser que outras telas mostrem o modal, chamem _openSearchModal diretamente)
   }
 
-  // Nota: a versão modal da busca foi removida deste arquivo para evitar
-  // comportamentos duplicados. Se quiser reintroduzir um modal global,
-  // posso criar um widget/reutilizável `showSearchDialog(context)`.
+  // Carrega a versão preferida do usuário (NVI, ACF, etc)
+  Future<void> _loadVersionPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentVersion = prefs.getString('bible_version') ?? 'nvi';
+    });
+  }
 
   String? _translateBookToAbbrev(String bookName) {
-    // (Lógica V1.37 (Custo Zero) 100% MANTIDA)
     String cleanName = bookName.toLowerCase().trim();
     return _bookTranslationMap[cleanName];
   }
 
   void _populateAbbrevToNameMap() {
     for (var entry in _bookTranslationMap.entries) {
-      // (Prioriza a primeira chave encontrada, ex: 'gênesis' sobre 'genesis')
       if (!_abbrevToBookNameMap.containsKey(entry.value)) {
         String name = entry.key;
         if (name.isNotEmpty) {
-          // (Capitaliza o nome para exibição)
           name = name[0].toUpperCase() + name.substring(1);
         }
         _abbrevToBookNameMap[entry.value] = name;
@@ -155,8 +152,6 @@ class SearchScreenState extends State<SearchScreen> {
     }
   }
 
-
-  // Load suggestions from Supabase `search_suggestions` table
   Future<void> _loadSuggestions() async {
     setState(() {
       _loadingSuggestions = true;
@@ -170,17 +165,15 @@ class SearchScreenState extends State<SearchScreen> {
 
       final List<dynamic> list = resp as List<dynamic>;
       setState(() {
-        // keep up to top 5 suggestions
         _suggestions = list.map((e) => (e['word'] ?? '').toString()).where((s) => s.isNotEmpty).toList();
       });
     } catch (e) {
-      // ignore errors (suggestions are optional)
+      // ignore errors
     } finally {
       if (mounted) setState(() => _loadingSuggestions = false);
     }
   }
 
-  // Upsert semantics: if exists increment search_count, otherwise insert with count=1
   Future<void> _upsertSuggestionOnResult(String term) async {
     try {
       final existing = await supabase.from('search_suggestions').select('id, search_count').ilike('word', term).limit(1).maybeSingle();
@@ -191,10 +184,9 @@ class SearchScreenState extends State<SearchScreen> {
       } else {
         await supabase.from('search_suggestions').insert({'word': term, 'search_count': 1});
       }
-      // refresh suggestions list
       _loadSuggestions();
     } catch (e) {
-      // ignore errors silently (best-effort)
+      // ignore errors
     }
   }
 
@@ -205,6 +197,7 @@ class SearchScreenState extends State<SearchScreen> {
     String abbrevToUse;
     int chapter;
     int? verse;
+    
     if (refVerseRegex.hasMatch(term)) {
         final match = refVerseRegex.firstMatch(term)!;
         bookInput = match.group(1)!;
@@ -231,7 +224,7 @@ class SearchScreenState extends State<SearchScreen> {
           return;
         }
         
-        // --- CORREÇÃO DO FLUXO ---
+        // --- LÓGICA DE DECISÃO MODAL VS FULLSCREEN ---
         if (widget.returnResult) {
           // MODO MODAL (TodayScreen): Usamos await + push
           final selectedVerseNumber = await Navigator.push<int>(
@@ -240,12 +233,11 @@ class SearchScreenState extends State<SearchScreen> {
               builder: (context) => VerseSelectionScreen(
                 bookAbbrev: abbrevToUse,
                 chapterNumber: chapter,
-                returnResult: true, // <--- Repassa a ordem de retorno
+                returnResult: true, 
               ),
             ),
           );
 
-          // Se voltou com número, fecha o modal devolvendo dados para TodayScreen
           if (selectedVerseNumber != null && mounted) {
             Navigator.of(context).pop({
               'abbrev': abbrevToUse,
@@ -254,47 +246,44 @@ class SearchScreenState extends State<SearchScreen> {
             });
           }
         } else {
-          // MODO LEGADO: Navegação direta (push sem await)
-          Navigator.push(
+          // MODO TELA CHEIA (Aba de Busca): Navegação direta
+          final selectedVerseNumber = await Navigator.push<int>(
             context,
             MaterialPageRoute(
               builder: (context) => VerseSelectionScreen(
                 bookAbbrev: abbrevToUse,
                 chapterNumber: chapter,
-                returnResult: false,
+                returnResult: true, // Pedimos retorno mesmo no modo tela cheia para controlar a navegação aqui
               ),
             ),
           );
+
+          if (selectedVerseNumber != null && mounted) {
+             _navigateToReading(abbrevToUse, chapter, selectedVerseNumber);
+          }
         }
     } else {
       _performUnifiedSearch(term);
     }
   }
 
-  // (lib/screens/search_screen.dart)
-
-  // (NOVA FUNÇÃO - O ORQUESTRADOR)
-  // (Esta função substitui a lógica de _performKeywordSearch)
   Future<void> _performUnifiedSearch(String term) async {
     setState(() {
       _isLoading = true;
       _statusMessage = "Buscando por '$term', a busca pode demorar um pouco...";
       _searchResults = [];
     });
-    await Future.delayed(const Duration(milliseconds: 100)); // (Para o loading aparecer)
+    await Future.delayed(const Duration(milliseconds: 100));
 
     try {
-      // (Chama as duas buscas em paralelo)
       final futureApiResults = _searchApiKeywords(term);
       final futureTitleResults = _searchChapterTitles(term);
 
-      // (Aguarda os resultados)
       final apiResults = await futureApiResults;
       final titleResults = await futureTitleResults;
 
       if (!mounted) return;
 
-      // (Combina os resultados, com Títulos primeiro!)
       final combinedResults = [...titleResults, ...apiResults];
 
       setState(() {
@@ -303,10 +292,6 @@ class SearchScreenState extends State<SearchScreen> {
         if (combinedResults.isEmpty) {
           _statusMessage = "Nenhum resultado encontrado para '$term'.";
         } else {
-          // (O status da API (ex: "50 resultados") é 
-          // definido dentro de _searchApiKeywords)
-          // (Se tivermos títulos, podemos sobrescrever 
-          // a msg de status da API)
           if (titleResults.isNotEmpty) {
              _statusMessage = "${titleResults.length} títulos e ${apiResults.length} versículos encontrados.";
           }
@@ -322,49 +307,45 @@ class SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  // (NOVA FUNÇÃO - BUSCA NO SUPABASE)
   Future<List<SearchVerse>> _searchChapterTitles(String term) async {
     try {
       final response = await supabase
           .from('chapter_titles')
           .select('title_text, book_abbrev, chapter, verse_start')
-          .ilike('title_text', '%$term%') // (Busca 'ilike' (case-insensitive))
-          .limit(15); // (Limita a 15 resultados de títulos)
+          .ilike('title_text', '%$term%')
+          .limit(15);
 
       if (!mounted) return [];
 
       List<SearchVerse> titleResults = [];
       for (var item in response) {
-        // (Usa o mapa reverso que criamos)
         String bookName = _abbrevToBookNameMap[item['book_abbrev']] ?? item['book_abbrev'].toUpperCase();
         
-        // (Adapta o resultado do Título ao modelo 'SearchVerse')
         titleResults.add(SearchVerse(
           bookAbbrev: item['book_abbrev'],
           chapter: item['chapter'],
           number: item['verse_start'],
-          text: item['title_text'], // (O subtítulo será o Título encontrado)
+          text: item['title_text'],
           bookName: bookName,
         ));
       }
       return titleResults;
     } catch (e) {
       debugPrint("Erro ao buscar títulos: $e");
-      return []; // (Retorna vazio em caso de erro)
+      return [];
     }
   }
 
-  // (FUNÇÃO RENOMEADA E MODIFICADA)
-  // (Era: _performKeywordSearch)
   Future<List<SearchVerse>> _searchApiKeywords(String term) async {
-    // (NÃO define _isLoading ou _statusMessage aqui, o orquestrador faz isso)
-    
     final String normalizedTerm = term;
     try {
       final url = "$apiUrl/search";
+      // [FIX]: Envia a versão atual para a busca
+      final apiPayload = {'term': normalizedTerm, 'version': _currentVersion};
+      
       final response = await _dio.post(
         url,
-        data: jsonEncode({'term': normalizedTerm}),
+        data: jsonEncode(apiPayload),
         options: Options(
           headers: {'Content-Type': 'application/json; charset=utf-8'},
           receiveTimeout: const Duration(seconds: 300),
@@ -381,7 +362,6 @@ class SearchScreenState extends State<SearchScreen> {
         
         if (mounted) {
           setState(() {
-            // (Define a msg de status específica da API)
             _statusMessage = "${data['occurrence']} resultados encontrados na Bíblia.";
           });
         }
@@ -390,14 +370,13 @@ class SearchScreenState extends State<SearchScreen> {
           await _upsertSuggestionOnResult(normalizedTerm);
         }
         
-        return apiResults; // (RETORNA A LISTA)
+        return apiResults;
       } else {
         throw Exception('Falha na busca (Erro: ${response.statusCode})');
       }
     } catch (e) {
       if (!mounted) return [];
       String errorMsg = e.toString();
-      // ... (resto da sua lógica de erro Dio)
       if (e is DioException) {
         if (e.type == DioExceptionType.receiveTimeout) {
           errorMsg = "A busca na API demorou demais (Timeout de 300s).";
@@ -412,62 +391,55 @@ class SearchScreenState extends State<SearchScreen> {
           _statusMessage = "Erro na busca API: $errorMsg";
         });
       }
-      return []; // (RETORNA LISTA VAZIA EM CASO DE ERRO)
+      return [];
     }
   }
 
-  Future<void> _navigateToReading(String abbrev, int chapter, int verse) async {
+  Future<void> _navigateToReading(String abbrev, int chapter, int? verse) async {
+    // Verse pode ser null se veio de busca de capítulo, assumimos 1
+    final int targetVerse = verse ?? 1;
+
     setState(() {
       _isLoading = true;
-      _statusMessage = "Carregando $abbrev $chapter:$verse...";
+      _statusMessage = "Carregando $abbrev $chapter:$targetVerse...";
     });
     try {
-      final url = "$apiUrl/chapter/$abbrev/$chapter";
+      // [FIX]: Usa a versão correta na URL para validar existência
+      final url = "$apiUrl/$_currentVersion/$abbrev/$chapter";
       final response = await http.get(Uri.parse(url)); 
+      
       if (!mounted) return;
       if (response.statusCode != 200) {
-         throw Exception("Referência não encontrada (ex: 'gn 1:1')");
+         throw Exception("Referência não encontrada.");
       }
       
-      // (Usa (corretamente) o Modelo V1.49.1 (Custo Zero))
-      final chapterData = ChapterResponse.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
-      final startIndex = verse - 1; 
-
-      // (Filtra (corretamente) 'items' (V1.49) (Custo Zero)
-      // (corretamente) para 'VerseItem' (V1.49) (Custo Zero))
-      final List<VerseItem> verses = chapterData.items
-          .whereType<VerseItem>() 
-          .toList();
-
-      if (startIndex < 0 || startIndex >= verses.length) { // (Usa (corretamente) 'verses.length' (V1.51))
-        throw Exception('Versículo não encontrado');
-      }
-
-      // (Corretamente) Mantém (V1.50) (Custo Zero)
-      // a chamada (V1.50) (Custo Zero)
-      // ao Leitor Legado (V1.25) (Custo Zero)
-      // (V1.50) (Custo Zero))
+      // Se chegou aqui, o capítulo existe.
+      
       if (widget.returnResult == true) {
         // Return the selection to the caller (modal use-case)
         Navigator.of(context).pop({
           'abbrev': abbrev,
           'chapter': chapter,
-          'verse': verse,
+          'verse': targetVerse,
         });
       } else {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ReadingScreen(
-              chapterData: chapterData,
-              startIndex: startIndex,
-            ),
-          ),
-        );
+        // Navegação Global (pela MainScreen)
+        // Como a MainScreen já tem o BibleReader carregado, usamos findAncestor para comandar a troca de aba
+        final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+        if (mainScreen != null) {
+           mainScreen.jumpToBible(abbrev, chapter, targetVerse);
+        } else {
+           // Fallback caso não encontre (ex: se a SearchScreen foi aberta fora da estrutura padrão)
+           // Redireciona para MainScreen resetada
+           Navigator.pushAndRemoveUntil(
+             context,
+             MaterialPageRoute(builder: (context) => const MainScreen()),
+             (route) => false
+           );
+        }
       }
-      setState(() {
-        _isLoading = false;
-      });
+      
+      setState(() { _isLoading = false; });
       
     } catch (e) {
       if (!mounted) return;
@@ -477,14 +449,11 @@ class SearchScreenState extends State<SearchScreen> {
       });
     }
   }
-  // --- FIM DA CORREÇÃO ---
 
   @override
   Widget build(BuildContext context) {
-    // If used as a modal bottom sheet that should return a result,
-    // render a compact header-like area with a responsive height.
-    double sheetHeight = MediaQuery.of(context).size.height * 0.7; // 60% da tela por padrão
-    sheetHeight = sheetHeight.clamp(390.0, 780.0).toDouble(); // nunca abaixo de 220, nem acima de 780
+    double sheetHeight = MediaQuery.of(context).size.height * 0.7; 
+    sheetHeight = sheetHeight.clamp(390.0, 780.0).toDouble(); 
 
     Widget contentColumn = Column(
       children: [
@@ -588,9 +557,7 @@ class SearchScreenState extends State<SearchScreen> {
     );
 
     if (widget.returnResult == true) {
-      // compact modal appearance: safe area + fixed height similar to header
       return SafeArea(
-          
           child: Container(
           height: sheetHeight,
           decoration: const BoxDecoration(
@@ -600,7 +567,6 @@ class SearchScreenState extends State<SearchScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // header row with back button and title (clickable)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
                 child: Row(
@@ -616,7 +582,7 @@ class SearchScreenState extends State<SearchScreen> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                    const SizedBox(width: 48), // spacer to balance the back button
+                    const SizedBox(width: 48), 
                   ],
                 ),
               ),
@@ -627,7 +593,6 @@ class SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    // default: full screen scaffold (unchanged behavior)
     return Scaffold(
       appBar: AppBar(
         title: const Text('Buscar na Bíblia'),

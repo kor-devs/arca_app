@@ -7,12 +7,13 @@ plugins {
 
 android {
     namespace = "com.example.arca_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36 // flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true // Para funcionar em versões antigas
     }
 
     kotlinOptions {
@@ -41,4 +42,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Habilitando o suporte a recursos modernos do Java (como TimeZone)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }

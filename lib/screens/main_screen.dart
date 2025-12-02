@@ -1,11 +1,11 @@
-// lib/screens/main_screen.dart (V1.35 - Navbar Limpa + Métodos Legados Adaptados)
+// lib/screens/main_screen.dart (V4.1 - Suporte a Plano de Leitura)
 import 'package:arca_app/constants.dart';
 import 'package:flutter/material.dart';
 
 import 'tabs/today_screen.dart';
 import 'tabs/bible_reader_screen.dart'; 
 import 'tabs/profile_screen.dart';
-// Import necessário para o método navigateToNotesTab funcionar
+import 'tabs/reading_club_screen.dart';
 import 'tabs/notes_screen.dart'; 
 
 class MainScreen extends StatefulWidget {
@@ -48,7 +48,6 @@ class MainScreen extends StatefulWidget {
 class MainScreenState extends State<MainScreen> {
 
   int _selectedIndex = 0;
-  // Mantemos APENAS a chave do Leitor, pois ele é a única aba com estado persistente complexo
   final GlobalKey<BibleReaderScreenState> _bibleReaderKey = GlobalKey<BibleReaderScreenState>();
   
   late final List<Widget> _widgetOptions;
@@ -56,17 +55,20 @@ class MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    // Navbar com 3 itens (Design Limpo)
+    // Navbar com 4 itens (Início, Bíblia, Clube, Opções)
     _widgetOptions = <Widget>[
       const TodayScreen(),
       BibleReaderScreen(key: _bibleReaderKey), 
+      const ReadingClubScreen(),
       const ProfileScreen(),
     ];
   }
 
-  // Navegação para a Bíblia
-  void jumpToBible(String abbrev, int chapter, int verseNumber) {
-    _bibleReaderKey.currentState?.loadChapter(abbrev, chapter, verseNumber);
+  // [MODIFICADO] Aceita planId e dayNumber opcionais para o Clube de Leitura
+  void jumpToBible(String abbrev, int chapter, int verseNumber, [int? planId, int? dayNumber]) {
+    // Passa os dados do plano para o leitor
+    _bibleReaderKey.currentState?.loadChapter(abbrev, chapter, verseNumber, planId, dayNumber);
+    
     setState(() {
       _selectedIndex = 1; // Vai para a aba do meio (Bíblia)
     });
@@ -74,6 +76,7 @@ class MainScreenState extends State<MainScreen> {
 
   void _onItemTapped(int index) {
     if (index == 1) {
+      _bibleReaderKey.currentState?.exitPlanMode();
       refreshBibleTab();
     }
     setState(() {
@@ -81,23 +84,14 @@ class MainScreenState extends State<MainScreen> {
     });
   }
 
-  // --- MÉTODOS RESTAURADOS E ADAPTADOS ---
-
-  // 1. Refresh da Bíblia (Crucial)
   void refreshBibleTab() {
     _bibleReaderKey.currentState?.refreshContent();
   }
 
-  // 2. Refresh Genérico (Adaptado)
-  // Antigamente atualizava notas. Como a tela de notas não é mais fixa,
-  // apenas garantimos que a Bíblia esteja atualizada (ex: ícones de notas nos versículos).
   void refreshContent() {
     refreshBibleTab();
   }
 
-  // 3. Navegar para Notas (Adaptado)
-  // Antigamente trocava de aba (index 3). Agora não existe index 3.
-  // Solução: Empurramos a tela de Notas por cima (Push), como fazemos no Perfil.
   void navigateToNotesTab({
     required String bookAbbrev, 
     required int chapter, 
@@ -105,20 +99,18 @@ class MainScreenState extends State<MainScreen> {
     required String verseText, 
     required String bookName
   }) {
-    // Abre a tela de notas como um modal/nova página
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => NotesScreen(
           onJumpToBible: (abbrev, ch, verse) {
-            Navigator.pop(context); // Fecha notas
-            jumpToBible(abbrev, ch, verse); // Vai pra bíblia
+            Navigator.pop(context); 
+            jumpToBible(abbrev, ch, verse); 
           },
         ),
       ),
     );
   }
-  // ---------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -137,10 +129,10 @@ class MainScreenState extends State<MainScreen> {
               elevation: 0, 
               backgroundColor: Colors.white,
               type: BottomNavigationBarType.fixed,
-              // Apenas 3 Itens
+              
               items: const <BottomNavigationBarItem>[
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.home_outlined),
+                  icon: Icon(Icons.home),
                   activeIcon: Icon(Icons.home, color: arcaOrange),
                   label: 'Início',
                 ),
@@ -150,9 +142,14 @@ class MainScreenState extends State<MainScreen> {
                   label: 'Bíblia',
                 ),
                 BottomNavigationBarItem(
+                  icon: Icon(Icons.explore_outlined), // Ícone de Mapa/Jornada
+                  activeIcon: Icon(Icons.explore, color: arcaOrange),
+                  label: 'Jornadas', // Nome novo
+                ),
+                BottomNavigationBarItem(
                   icon: Icon(Icons.dehaze_rounded),
                   activeIcon: Icon(Icons.dehaze_sharp, color: arcaOrange),
-                  label: 'Mais',
+                  label: 'Opções',
                 ),
               ],
               currentIndex: _selectedIndex,
