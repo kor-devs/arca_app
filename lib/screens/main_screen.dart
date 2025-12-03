@@ -1,4 +1,4 @@
-// lib/screens/main_screen.dart (V4.1 - Suporte a Plano de Leitura)
+// lib/screens/main_screen.dart (V5.2 - Com Controle de Refresh da Jornada)
 import 'package:arca_app/constants.dart';
 import 'package:flutter/material.dart';
 
@@ -48,36 +48,50 @@ class MainScreen extends StatefulWidget {
 class MainScreenState extends State<MainScreen> {
 
   int _selectedIndex = 0;
+  
+  // Chaves Globais para controlar as abas
   final GlobalKey<BibleReaderScreenState> _bibleReaderKey = GlobalKey<BibleReaderScreenState>();
+  // [NOVO] Chave para controlar a Jornada e forçar refresh
+  final GlobalKey<ReadingClubScreenState> _readingClubKey = GlobalKey<ReadingClubScreenState>();
   
   late final List<Widget> _widgetOptions;
 
   @override
   void initState() {
     super.initState();
-    // Navbar com 4 itens (Início, Bíblia, Clube, Opções)
     _widgetOptions = <Widget>[
       const TodayScreen(),
       BibleReaderScreen(key: _bibleReaderKey), 
-      const ReadingClubScreen(),
+      ReadingClubScreen(key: _readingClubKey), // [MODIFICADO] Passando a chave
       const ProfileScreen(),
     ];
   }
 
-  // [MODIFICADO] Aceita planId e dayNumber opcionais para o Clube de Leitura
   void jumpToBible(String abbrev, int chapter, int verseNumber, [int? planId, int? dayNumber]) {
-    // Passa os dados do plano para o leitor
     _bibleReaderKey.currentState?.loadChapter(abbrev, chapter, verseNumber, planId, dayNumber);
-    
     setState(() {
       _selectedIndex = 1; // Vai para a aba do meio (Bíblia)
     });
   }
 
+  // [NOVO] Método chamado pela Bíblia ao terminar o dia
+  void jumpToReadingClub() {
+    // Força atualização dos dados (barra de progresso)
+    _readingClubKey.currentState?.refreshData();
+    setState(() {
+      _selectedIndex = 2; // Volta para a aba de Jornadas
+    });
+  }
+
   void _onItemTapped(int index) {
     if (index == 1) {
+      // Se clicou na Bíblia, sai do modo plano
       _bibleReaderKey.currentState?.exitPlanMode();
       refreshBibleTab();
+    }
+    if (index == 2) {
+      // [NOVO] Se clicou na Jornada, atualiza os dados
+      _readingClubKey.currentState?.refreshData();
     }
     setState(() {
       _selectedIndex = index;
@@ -132,8 +146,8 @@ class MainScreenState extends State<MainScreen> {
               
               items: const <BottomNavigationBarItem>[
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.home),
-                  activeIcon: Icon(Icons.home, color: arcaOrange),
+                  icon: Icon(Icons.church_outlined),
+                  activeIcon: Icon(Icons.church, color: arcaOrange),
                   label: 'Início',
                 ),
                 BottomNavigationBarItem(
@@ -142,9 +156,9 @@ class MainScreenState extends State<MainScreen> {
                   label: 'Bíblia',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.explore_outlined), // Ícone de Mapa/Jornada
+                  icon: Icon(Icons.explore_outlined), 
                   activeIcon: Icon(Icons.explore, color: arcaOrange),
-                  label: 'Jornadas', // Nome novo
+                  label: 'Jornadas',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.dehaze_rounded),

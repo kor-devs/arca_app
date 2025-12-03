@@ -18,7 +18,7 @@ void main() async {
     // (Mantenha o nome que funcionou no log anterior, 
     // provavelmente '.env' ou 'assets/env')
     //await dotenv.load(fileName: "assets/env");
-    await dotenv.load(fileName: "assets/env"); 
+    await dotenv.load(fileName: ".env"); 
     
     // 2. Verifica TODAS as variáveis
     final url = dotenv.env['SUPABASE_URL'];

@@ -55,8 +55,7 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
   final Map<String, String> _availableVersions = {
     'nvi': 'Nova Versão Internacional',
     'acf': 'Almeida Corrigida Fiel',
-    'ar': 'Almeida Revisada',
-    'kjv': 'Versão King James'
+    'ra': 'Almeida Revista e Atualizada'
   };
 
   Map<int, VerseNote> _notesMap = {};
@@ -154,34 +153,57 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
 
     try {
       final user = supabase.auth.currentUser;
-      if (user == null) return;
+      if (user == null) throw Exception("Usuário desconectado");
 
-      // 1. Atualiza progresso
+      // 1. Atualiza progresso (Crítico)
       await supabase.from('user_active_plans').update({
         'current_day': _activeDayNumber! + 1,
         'last_read_at': DateTime.now().toIso8601String()
       }).eq('id', _activePlanId!);
 
-      // 2. Incrementa Streak
-      await supabase.rpc('increment_streak', params: {'user_uuid': user.id});
+      // 2. Incrementa Streak (Opcional - Não bloqueia o fluxo se falhar)
+      try {
+        await supabase.rpc('increment_streak', params: {'user_uuid': user.id});
+      } catch (rpcError) {
+        debugPrint("Aviso: Falha ao atualizar ofensiva (ignorado): $rpcError");
+      }
 
       if (mounted) {
+        // Feedback Visual
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Leitura concluída! 🔥 Plano atualizado!"),
+            content: Text("Leitura concluída! 🔥",
+            style: TextStyle(color: arcaBlack, fontWeight: FontWeight.bold)
+            ),
             backgroundColor: arcaNeonGreen,
             duration: Duration(seconds: 2),
           ),
         );
+        
+        // Limpa estado
         setState(() {
           _activePlanId = null; 
           _activeDayNumber = null;
           _isCompletingPlan = false;
         });
+
+        // NAVEGAÇÃO: Busca a MainScreen e volta para Jornadas
+        final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+        if (mainScreen != null) {
+           mainScreen.jumpToReadingClub();
+        } else {
+           debugPrint("ERRO: MainScreenState não encontrado na árvore de widgets.");
+        }
       }
     } catch (e) {
-      debugPrint("Erro ao completar plano: $e");
-      if (mounted) setState(() { _isCompletingPlan = false; });
+      debugPrint("ERRO CRÍTICO AO COMPLETAR PLANO: $e");
+      if (mounted) {
+        // Mostra o erro na tela para sabermos o que aconteceu
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erro ao salvar: $e"), backgroundColor: Colors.red),
+        );
+        setState(() { _isCompletingPlan = false; });
+      }
     }
   }
 
@@ -1115,35 +1137,35 @@ Continue a leitura na Arca: https://arca.kordevs.com
                                 Positioned(left: 12, bottom: 18, child: GestureDetector(onTap: _prevChapter, child: const SizedBox(width: 56, height: 56, child: Center(child: Icon(Icons.chevron_left, size: 28, color: arcaOrange))))),
                                 Positioned(right: 12, bottom: 18, child: GestureDetector(onTap: _nextChapter, child: const SizedBox(width: 56, height: 56, child: Center(child: Icon(Icons.chevron_right, size: 28, color: arcaOrange))))),
                                 Positioned(
-                                  child: ElevatedButton(
-                                    onPressed: isPlanMode 
-                                        ? (_isCompletingPlan ? null : _completePlanReading) // Ação de Concluir
-                                        : _showStudyModal,                                  // Ação de Saiba Mais
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: isPlanMode ? arcaNeonGreen : arcaOrange,
-                                      foregroundColor: isPlanMode ? Colors.black87 : arcaWhite, // Texto preto no verde, branco no laranja
-                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                      elevation: 4,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                    ),
-                                    child: _isCompletingPlan
-                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black54))
-                                      : Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (isPlanMode) const Icon(Icons.check, size: 18),
-                                            if (isPlanMode) const SizedBox(width: 6),
-                                            Text(
-                                              isPlanMode ? "CONCLUIR DIA" : "Saiba mais", 
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold, 
-                                                letterSpacing: isPlanMode ? 0.5 : 0.0
-                                              )
-                                            ),
-                                          ],
-                                        ),
-                                  ),
-                                ),
+  child: ElevatedButton(
+    onPressed: isPlanMode 
+        ? (_isCompletingPlan ? null : _completePlanReading) // Se for plano, CONCLUI e VOLTA
+        : _showStudyModal,                                  // Se for normal, MOSTRA ESTUDO
+    style: ElevatedButton.styleFrom(
+      backgroundColor: isPlanMode ? arcaNeonGreen : arcaOrange, // Verde para concluir, Laranja para estudo
+      foregroundColor: isPlanMode ? Colors.black87 : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+    ),
+    child: _isCompletingPlan
+      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black54))
+      : Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isPlanMode) const Icon(Icons.check, size: 18),
+            if (isPlanMode) const SizedBox(width: 6),
+            Text(
+              isPlanMode ? "CONCLUIR DIA" : "Saiba mais", 
+              style: TextStyle(
+                fontWeight: FontWeight.bold, 
+                letterSpacing: isPlanMode ? 0.5 : 0.0
+              )
+            ),
+          ],
+        ),
+  ),
+),
                               ],
                             ),
                           ),
@@ -1189,7 +1211,7 @@ class _StudyInfoSheet extends StatelessWidget {
     // Tenta encontrar pelo nome exato ou retorna o próprio nome minúsculo (fallback)
     return map[bookName] ?? map[bookName.split(' ').first] ?? bookName.toLowerCase().substring(0, 2);
   }
-  
+
   void _navigateToRef(BuildContext context, String refString) {
     // Ex: "Romanos 5" -> book="Romanos", chapter="5"
     try {

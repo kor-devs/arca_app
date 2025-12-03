@@ -11,10 +11,10 @@ class ReadingClubScreen extends StatefulWidget {
   const ReadingClubScreen({super.key});
 
   @override
-  State<ReadingClubScreen> createState() => _ReadingClubScreenState();
+  State<ReadingClubScreen> createState() => ReadingClubScreenState();
 }
 
-class _ReadingClubScreenState extends State<ReadingClubScreen> with SingleTickerProviderStateMixin {
+class ReadingClubScreenState extends State<ReadingClubScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isLoading = true;
   
@@ -28,6 +28,10 @@ class _ReadingClubScreenState extends State<ReadingClubScreen> with SingleTicker
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadData();
+  }
+
+  Future<void> refreshData() async {
+    await _loadData();
   }
 
   @override
@@ -115,25 +119,39 @@ class _ReadingClubScreenState extends State<ReadingClubScreen> with SingleTicker
       final user = supabase.auth.currentUser;
       if (user == null) return;
 
+      // 1. Optimistic UI Update (Instant feedback)
+      setState(() {
+        final index = _myActivePlans.indexWhere((p) => p['id'] == activePlanId);
+        if (index != -1) {
+          _myActivePlans[index]['current_day'] = dayNumber + 1;
+          // Optimistically update progress bar logic here if needed
+        }
+        _streak += 1; // Instant streak feedback
+      });
+
+      // 2. Database Updates
       await supabase.from('user_active_plans').update({
         'current_day': dayNumber + 1,
         'last_read_at': DateTime.now().toIso8601String()
       }).eq('id', activePlanId);
 
       await supabase.rpc('increment_streak', params: {'user_uuid': user.id});
+
+      // 3. Reload to ensure consistency
       await _loadData();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Leitura concluída! 🔥"),
+            content: Text("Leitura concluída! 🔥 Continue assim!"),
             backgroundColor: arcaNeonGreen,
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } catch (e) {
-      _loadData(); 
+      debugPrint("Erro ao completar: $e");
+      _loadData(); // Revert on error
     }
   }
 
