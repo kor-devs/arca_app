@@ -9,10 +9,12 @@ import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart'; 
+import 'package:percent_indicator/percent_indicator.dart';
 import 'dart:async';
 
 import '../../main.dart';
 import '../../models/random_verse.dart';
+//import '../../models/devotional_model.dart';
 import 'verse_of_the_day_card.dart';
 import '../../constants.dart';
 // Import da nova tela de Devocional
@@ -28,6 +30,9 @@ class TodayScreenState extends State<TodayScreen> {
   late Future<RandomVerse> futureVerseOfTheDay;
   String _greetingMessage = "";
   String _userName = "Irmão(ã)";
+
+  int _currentStreak = 0;
+  bool _isLoadingStats = true;
   
   final TextEditingController _homeSearchController = TextEditingController();
   final ScreenshotController _screenshotController = ScreenshotController();
@@ -38,6 +43,19 @@ class TodayScreenState extends State<TodayScreen> {
   final PageController _tutorialController = PageController();
   int _currentTutorialPage = 0;
   bool _isSharing = false;
+
+  final List<Map<String, dynamic>> _badges = [
+    // 3 Dias: Bronze / Início
+    {'days': 3, 'title': 'Chama Inicial', 'icon': Icons.whatshot_outlined, 'color': [Color(0xFFCD7F32), Color(0xFF8B4513)]}, 
+    // 7 Dias: Prata / Hábito
+    {'days': 7, 'title': 'Labareda', 'icon': Icons.whatshot_sharp, 'color': [Color(0xFFC0C0C0), Color(0xFF707070)]}, 
+    // 14 Dias: Ouro / Compromisso
+    {'days': 14, 'title': 'Incendiário', 'icon': Icons.local_fire_department_rounded, 'color': [Color(0xFFFFD700), Color(0xFFDAA520)]},
+    // 30 Dias: Diamante / Estilo de Vida
+    {'days': 30, 'title': 'Fogo Constante', 'icon': Icons.fireplace_outlined, 'color': [Color(0xFFB9F2FF), Color(0xFF00BFFF)]},
+    // 100 Dias: Mestre / Legado
+    {'days': 100, 'title': 'Sarça Ardente', 'icon': Icons.auto_awesome, 'color': [Color(0xFFFF4500), Color(0xFF8B0000)]},
+  ];
 
   final List<Map<String, String>> _tutorialSteps = [
     {
@@ -84,6 +102,7 @@ class TodayScreenState extends State<TodayScreen> {
     _generateGreeting();
     _checkTutorialStatus();
     _startAutoScroll();
+    _fetchUserStats();
   }
 
   @override
@@ -141,6 +160,28 @@ class TodayScreenState extends State<TodayScreen> {
     setState(() {
       _greetingMessage = options[Random().nextInt(options.length)];
     });
+  }
+
+  Future<void> _fetchUserStats() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final response = await supabase
+          .from('user_stats')
+          .select('current_streak')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (response != null && mounted) {
+        setState(() {
+          _currentStreak = response['current_streak'] ?? 0;
+          _isLoadingStats = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Erro ao carregar stats: $e");
+    }
   }
 
   Future<RandomVerse> fetchVerseOfTheDay() async {
@@ -615,7 +656,10 @@ class TodayScreenState extends State<TodayScreen> {
                   // 2. [NOVO] Devocional (Logo abaixo do tutorial ou no topo)
                   _buildDevotionalEntry(),
 
-                  // 3. Versículo
+                  // 3. Intimidade com a Palavra
+                  _buildIntimacyCard(),
+
+                  // 4. Versículo
                   _buildVerseOfTheDayCard(),
 
                   const SizedBox(height: 30), // Padding final
@@ -627,4 +671,219 @@ class TodayScreenState extends State<TodayScreen> {
       ),
     );
   }
+
+  Widget _buildMedalBadge(Map<String, dynamic> badge, bool isUnlocked) {
+    final List<Color> colors = badge['color'] as List<Color>;
+    
+    return Container(
+      height: 65, // Medalha maior
+      width: 65,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        // Gradiente principal (Ouro/Prata/Bronze)
+        gradient: LinearGradient(
+          colors: isUnlocked ? colors : [Colors.grey.shade800, Colors.grey.shade900],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          // Sombra para dar efeito 3D
+          if (isUnlocked)
+            BoxShadow(color: colors.first.withOpacity(0.5), blurRadius: 15, offset: const Offset(0, 4))
+        ],
+        // Borda externa
+        border: Border.all(
+          color: isUnlocked ? Colors.white.withOpacity(0.3) : Colors.white10,
+          width: 2,
+        ),
+      ),
+      child: Center(
+        child: Container(
+          height: 52,
+          width: 52,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black.withOpacity(0.3), // Fundo escuro interno
+            border: Border.all(
+              color: isUnlocked ? colors.first.withOpacity(0.6) : Colors.transparent, 
+              width: 1
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                badge['icon'],
+                color: isUnlocked ? Colors.white : Colors.white24,
+                size: 20,
+              ),
+              if (isUnlocked)
+                Text(
+                  "${badge['days']}",
+                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- CARD DE INTIMIDADE (BADGES) ---
+  Widget _buildIntimacyCard() {
+    if (_isLoadingStats) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 20),
+        height: 120,
+        decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(20)),
+        child: const Center(child: CircularProgressIndicator(color: arcaPurple, strokeWidth: 2)),
+      );
+    }
+
+    // Lógica de Nível
+    Map<String, dynamic> nextBadge = _badges.first;
+    Map<String, dynamic> currentBadge = _badges.first;
+    
+    // Se o usuário tem 0 dias, ele está buscando o primeiro badge
+    if (_currentStreak < _badges.first['days']) {
+       currentBadge = _badges.first; // Mostra o alvo
+       nextBadge = _badges.first;
+    } else {
+      for (int i = 0; i < _badges.length; i++) {
+        if (_currentStreak >= _badges[i]['days']) {
+          currentBadge = _badges[i]; // Conquistou este
+        }
+        if (_currentStreak < _badges[i]['days']) {
+          nextBadge = _badges[i]; // Próximo alvo
+          break; 
+        }
+      }
+    }
+
+    // Cálculo da Barra
+    int target = nextBadge['days'] as int;
+    if (_currentStreak >= _badges.last['days']) target = _currentStreak * 2;
+    double progress = _currentStreak / target;
+    if (progress > 1.0) progress = 1.0;
+
+    // Se o usuário ainda não atingiu o mínimo (3 dias), a medalha fica "bloqueada" visualmente
+    bool hasMinimumBadge = _currentStreak >= currentBadge['days'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF2E0249).withOpacity(0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          )
+        ],
+        // Gradiente Premium YouVersion-like
+        gradient: const LinearGradient(
+          colors: [Color(0xFF3b1d60), Color(0xFF632c63)], 
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        // Imagem de fundo sutil (opcional, simula textura)
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+            mainScreen?.jumpToReadingClub();
+          },
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Row(
+              children: [
+                // 1. A Medalha (Esquerda)
+                _buildMedalBadge(currentBadge, hasMinimumBadge),
+                
+                const SizedBox(width: 18),
+                
+                // 2. Estatísticas (Centro/Direita)
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "INTIMIDADE COM A PALAVRA",
+                        style: TextStyle(
+                          color: Colors.white60,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            "$_currentStreak",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 36,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text("dias seguidos • ",
+                            style: TextStyle(color: Colors.white.withOpacity(0.8),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text("${currentBadge['title']}",
+                            style: const TextStyle(color: arcaYellow,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      
+                      // Barra de Progresso com Rótulo
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Próx: ${(nextBadge['title'] as String)}", 
+                            style: const TextStyle(color: arcaYellow, fontSize: 10, fontWeight: FontWeight.bold)
+                          ),
+                          Text(
+                            "$target dias", 
+                            style: const TextStyle(color: Colors.white38, fontSize: 10)
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      LinearPercentIndicator(
+                        padding: EdgeInsets.zero,
+                        lineHeight: 8.0,
+                        percent: progress,
+                        backgroundColor: Colors.black26,
+                        progressColor: (nextBadge['color'] as List<Color>).first, // Usa a cor da medalha alvo
+                        barRadius: const Radius.circular(4),
+                        animation: true,
+                        animationDuration: 1200,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
 }
