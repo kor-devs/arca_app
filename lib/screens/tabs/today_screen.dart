@@ -10,11 +10,12 @@ import 'package:share_plus/share_plus.dart';
 import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart'; 
 import 'package:percent_indicator/percent_indicator.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 
 import '../../main.dart';
 import '../../models/random_verse.dart';
-//import '../../models/devotional_model.dart';
+import '../../models/devotional_model.dart';
 import 'verse_of_the_day_card.dart';
 import '../../constants.dart';
 // Import da nova tela de Devocional
@@ -33,6 +34,8 @@ class TodayScreenState extends State<TodayScreen> {
 
   int _currentStreak = 0;
   bool _isLoadingStats = true;
+
+  Devotional? _todayDevotional;
   
   final TextEditingController _homeSearchController = TextEditingController();
   final ScreenshotController _screenshotController = ScreenshotController();
@@ -45,16 +48,18 @@ class TodayScreenState extends State<TodayScreen> {
   bool _isSharing = false;
 
   final List<Map<String, dynamic>> _badges = [
+    // 0 Dias: Sem Medalha
+    {'days': 0, 'title': 'Lenha', 'icon': Icons.compost, 'color': [const Color(0xFFCD7F32), const Color.fromARGB(255, 139, 27, 19)]},
     // 3 Dias: Bronze / Início
-    {'days': 3, 'title': 'Chama Inicial', 'icon': Icons.whatshot_outlined, 'color': [Color(0xFFCD7F32), Color(0xFF8B4513)]}, 
+    {'days': 3, 'title': 'Chama Inicial', 'icon': Icons.whatshot_outlined, 'color': [const Color(0xFFCD7F32), const Color.fromARGB(255, 139, 27, 19)]}, 
     // 7 Dias: Prata / Hábito
-    {'days': 7, 'title': 'Labareda', 'icon': Icons.whatshot_sharp, 'color': [Color(0xFFC0C0C0), Color(0xFF707070)]}, 
+    {'days': 7, 'title': 'Labareda', 'icon': Icons.whatshot_sharp, 'color': [const Color(0xFFCD7F32), const Color.fromARGB(255, 139, 27, 19)]}, 
     // 14 Dias: Ouro / Compromisso
-    {'days': 14, 'title': 'Incendiário', 'icon': Icons.local_fire_department_rounded, 'color': [Color(0xFFFFD700), Color(0xFFDAA520)]},
-    // 30 Dias: Diamante / Estilo de Vida
-    {'days': 30, 'title': 'Fogo Constante', 'icon': Icons.fireplace_outlined, 'color': [Color(0xFFB9F2FF), Color(0xFF00BFFF)]},
-    // 100 Dias: Mestre / Legado
-    {'days': 100, 'title': 'Sarça Ardente', 'icon': Icons.auto_awesome, 'color': [Color(0xFFFF4500), Color(0xFF8B0000)]},
+    {'days': 14, 'title': 'Incendiário', 'icon': Icons.local_fire_department_rounded, 'color': [const Color(0xFFCD7F32), const Color.fromARGB(255, 139, 27, 19)]},
+    // 21 Dias: Diamante / Estilo de Vida
+    {'days': 21, 'title': 'Fogo Constante', 'icon': Icons.fireplace_outlined, 'color': [const Color(0xFFCD7F32), const Color.fromARGB(255, 139, 27, 19)]},
+    // 30 Dias: Mestre / Legado
+    {'days': 30, 'title': 'Sarça Ardente', 'icon': Icons.auto_awesome, 'color': [const Color(0xFFCD7F32), const Color.fromARGB(255, 139, 27, 19)]},
   ];
 
   final List<Map<String, String>> _tutorialSteps = [
@@ -103,6 +108,7 @@ class TodayScreenState extends State<TodayScreen> {
     _checkTutorialStatus();
     _startAutoScroll();
     _fetchUserStats();
+    _fetchNextDevotional();
   }
 
   @override
@@ -152,8 +158,9 @@ class TodayScreenState extends State<TodayScreen> {
     }
     final hour = DateTime.now().hour;
     String timeBasedGreeting;
-    if (hour < 12) timeBasedGreeting = "Bom dia";
-    else if (hour < 18) timeBasedGreeting = "Boa tarde";
+    if (hour < 12) {
+      timeBasedGreeting = "Bom dia";
+    } else if (hour < 18) timeBasedGreeting = "Boa tarde";
     else timeBasedGreeting = "Boa noite";
 
     final List<String> options = ["Shalom,", "Graça e Paz,", "$timeBasedGreeting,"];
@@ -181,6 +188,54 @@ class TodayScreenState extends State<TodayScreen> {
       }
     } catch (e) {
       debugPrint("Erro ao carregar stats: $e");
+    }
+  }
+
+  Future<void> _fetchNextDevotional() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      // 1. Busca IDs já lidos
+      final readResponse = await supabase
+          .from('user_devotionals')
+          .select('devotional_id')
+          .eq('user_id', user.id);
+      
+      final List<int> readIds = (readResponse as List)
+          .map<int>((e) => e['devotional_id'] as int)
+          .toList();
+
+      // 2. Query corrigida
+      var query = supabase.from('devotionals').select();
+      
+      if (readIds.isNotEmpty) {
+        // [CORREÇÃO] Sintaxe correta para 'not in' no Dart Supabase v2
+        // Usa-se o filtro .not('coluna', 'operador', valor)
+        // O operador para IN é 'in', logo para NOT IN usamos filter com 'not.in' ou a combinação abaixo:
+        
+        // Opção A (Mais compatível com versões recentes):
+        query = query.not('id', 'in', '(${readIds.join(',')})');
+      }
+
+      final response = await query
+          .order('day_of_year', ascending: true)
+          .limit(1)
+          .maybeSingle();
+
+      if (response != null && mounted) {
+        setState(() {
+          _todayDevotional = Devotional.fromJson(response);
+        });
+      } else {
+        // Fallback se leu todos
+        final fallback = await supabase.from('devotionals').select().limit(1).maybeSingle();
+        if (fallback != null && mounted) {
+           setState(() { _todayDevotional = Devotional.fromJson(fallback); });
+        }
+      }
+    } catch (e) {
+      debugPrint("Erro devocional: $e");
     }
   }
 
@@ -230,92 +285,181 @@ class TodayScreenState extends State<TodayScreen> {
 
   // [NOVO] Card de Devocional Compacto e Chamativo
   Widget _buildDevotionalEntry() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            // Navega para a tela de devocional criada anteriormente
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (ctx) => DevotionalScreen(
-                  onJumpToBible: (abbrev, chapter, verse) {
-                    // Usamos o 'context' da TodayScreen para achar a MainScreen
-                    final mainScreen = context.findAncestorStateOfType<MainScreenState>();
-                    mainScreen?.jumpToBible(abbrev, chapter, verse);
-                  },
-                ),
-              ),
-            );
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFFFF3E0), Colors.white], // Leve tom laranja/branco
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: arcaOrange.withOpacity(0.2)),
-              boxShadow: [
-                BoxShadow(
-                  color: arcaOrange.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4)
-                )
-              ]
+    // Se não carregou ainda, não mostra
+    if (_todayDevotional == null) return const SizedBox.shrink();
+
+    final dev = _todayDevotional!;
+    final DateTime now = DateTime.now();
+    final String dateString = "${now.day}/${now.month}";
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4.0, bottom: 8.0),
+          child: Text(
+            "DEVOCIONAL DO DIA",
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+              color: arcaPurple,
             ),
-            child: Row(
-              children: [
-                // Ícone de Destaque
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: arcaOrange.withOpacity(0.15),
-                    shape: BoxShape.circle,
+          ),
+        ),
+        Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E2C), // Fundo Dark
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              )
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (ctx) => DevotionalScreen(
+                      devotionalId: dev.id,
+                      initialData: dev,
+                      onJumpToBible: (abbrev, chapter, verse) {
+                        final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+                        mainScreen?.jumpToBible(abbrev, chapter, verse);
+                      },
+                    ),
                   ),
-                  child: const Icon(Icons.menu_book_rounded, color: arcaOrange, size: 24),
-                ),
-                const SizedBox(width: 16),
-                
-                // Textos
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                );
+              },
+              borderRadius: BorderRadius.circular(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Imagem de Capa
+                  Stack(
                     children: [
-                      const Text(
-                        "DEVOCIONAL DE HOJE",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: arcaOrange,
-                          letterSpacing: 1.0,
+                      ClipRRect(
+                        borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+                        child: SizedBox(
+                          height: 140,
+                          width: double.infinity,
+                          child: CachedNetworkImage(
+                            imageUrl: dev.imageUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(color: Colors.grey[900]),
+                            errorWidget: (context, url, error) => Container(
+                              color: Colors.grey[850], 
+                              child: const Icon(Icons.broken_image, color: Colors.white24)
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        "alimento para a alma", // Poderia ser dinâmico com o título do dia
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[800],
+                      // Gradiente Fade
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                const Color(0xFF1E1E2C).withOpacity(0.0),
+                                const Color(0xFF1E1E2C),
+                              ],
+                              stops: const [0.0, 0.6, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Badge Data/Tema
+                      Positioned(
+                        top: 16,
+                        left: 16,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today, size: 12, color: arcaOrange),
+                              const SizedBox(width: 6),
+                              Text(
+                                "$dateString • ${dev.theme.toUpperCase()}",
+                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                
-                // Seta indicativa
-                const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
-              ],
+
+                  // Conteúdo
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                            const SizedBox(width: 6),
+                            Text(
+                              "Leitura de ${dev.duration}",
+                              style: const TextStyle(color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          dev.title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            height: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "Baseado em ${dev.verseReference}",
+                          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14, fontStyle: FontStyle.italic),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // Botão Fake (Visual)
+                        SizedBox(
+                          width: double.infinity,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: arcaOrange,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text("LER DEVOCIONAL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -564,9 +708,12 @@ class TodayScreenState extends State<TodayScreen> {
 
     return Scaffold(
       backgroundColor: arcaWhite, 
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
+      body: RefreshIndicator(
+        onRefresh: _refreshPage,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
             Stack(
               clipBehavior: Clip.none,
               alignment: Alignment.center,
@@ -652,15 +799,18 @@ class TodayScreenState extends State<TodayScreen> {
 
                   // 1. Tutorial (Se ativo)
                   _buildTutorialCard(),
-                  
-                  // 2. [NOVO] Devocional (Logo abaixo do tutorial ou no topo)
-                  _buildDevotionalEntry(),
+                  const SizedBox(height: 20),
+
+                  // 2. Versículo
+                  _buildVerseOfTheDayCard(),
+                  const SizedBox(height: 20),
 
                   // 3. Intimidade com a Palavra
                   _buildIntimacyCard(),
+                  const SizedBox(height: 20),
 
-                  // 4. Versículo
-                  _buildVerseOfTheDayCard(),
+                  // 4. Devocional do Dia
+                  _buildDevotionalEntry(),
 
                   const SizedBox(height: 30), // Padding final
                 ],
@@ -669,6 +819,7 @@ class TodayScreenState extends State<TodayScreen> {
           ],
         ),
       ),
+    )
     );
   }
 
@@ -715,18 +866,33 @@ class TodayScreenState extends State<TodayScreen> {
               Icon(
                 badge['icon'],
                 color: isUnlocked ? Colors.white : Colors.white24,
-                size: 20,
+                size: 35,
               ),
-              if (isUnlocked)
-                Text(
-                  "${badge['days']}",
-                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                )
+              // Mantemos apenas o ícone centralizado na medalha; não mostrar o contador de dias
             ],
           ),
         ),
       ),
     );
+  }
+
+  // Pull-to-refresh handler: refresh verse, stats and devotional
+  Future<void> _refreshPage() async {
+    try {
+      // trigger a fresh fetch for verse of the day
+      setState(() {
+        futureVerseOfTheDay = fetchVerseOfTheDay();
+      });
+
+      // await all tasks (best-effort)
+      await Future.wait([
+        futureVerseOfTheDay,
+        _fetchUserStats(),
+        _fetchNextDevotional(),
+      ]);
+    } catch (e) {
+      // ignore errors silently; RefreshIndicator will stop spinning
+    }
   }
 
   // --- CARD DE INTIMIDADE (BADGES) ---

@@ -166,7 +166,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
                 const SizedBox(height: 8), // Espaço entre a marca e a versão
                 Text(
-                  "v1.0.26", // Lembre-se de atualizar aqui quando mudar no pubspec
+                  "v1.0.30", // Lembre-se de atualizar aqui quando mudar no pubspec
                   style: TextStyle(
                     color: arcaWhite.withOpacity(0.4), // Bem sutil
                     fontSize: 10,

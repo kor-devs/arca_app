@@ -103,7 +103,7 @@ class _CompletedDevotionalsScreenState extends State<CompletedDevotionalsScreen>
                         context,
                         MaterialPageRoute(
                           builder: (ctx) => DevotionalScreen(
-                            specificDevotionalId: devData['id'], // Passa o ID específico
+                            devotionalId: devData['id'], // Passa o ID específico
                             onJumpToBible: (abbrev, chapter, verse) {
                               Navigator.pop(ctx);
                               final mainScreen = context.findAncestorStateOfType<MainScreenState>();

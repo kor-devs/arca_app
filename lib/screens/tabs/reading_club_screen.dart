@@ -143,7 +143,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with SingleTickerP
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Leitura concluída! 🔥 Continue assim!"),
+            content: Text("Leitura concluída! 🔥 Continue assim!", style: TextStyle(color: arcaBlack, fontWeight: FontWeight.bold)),
             backgroundColor: arcaNeonGreen,
             behavior: SnackBarBehavior.floating,
           ),

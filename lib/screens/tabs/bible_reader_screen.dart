@@ -37,6 +37,29 @@ class BibleReaderScreen extends StatefulWidget {
   BibleReaderScreenState createState() => BibleReaderScreenState();
 }
 
+class VerseHighlight {
+  final int verseNumber;
+  final String type; // 'jesus_speech' ou 'promise'
+  final String highlightType; // 'full_verse' ou 'partial'
+  final String? textMatch; // Texto para buscar se for partial
+
+  VerseHighlight({
+    required this.verseNumber,
+    required this.type,
+    required this.highlightType,
+    this.textMatch,
+  });
+
+  factory VerseHighlight.fromMap(Map<String, dynamic> map) {
+    return VerseHighlight(
+      verseNumber: map['verse'] as int,
+      type: map['type'] as String,
+      highlightType: map['highlight_type'] as String? ?? 'full_verse',
+      textMatch: map['text_match'] as String?,
+    );
+  }
+}
+
 class BibleReaderScreenState extends State<BibleReaderScreen> {
   bool _isLoading = true;
   ChapterResponse? _currentResponse;
@@ -81,6 +104,9 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
   final BibleService _bibleService = BibleService();
 
+  List<VerseHighlight> _highlights = [];
+
+  // Estrutura da Bíblia (abrev, capítulos)
   static final List<Map<String, dynamic>> _bibleStructure = [
     {'abbrev': 'gn', 'chapters': 50}, {'abbrev': 'ex', 'chapters': 40},
     {'abbrev': 'lv', 'chapters': 27}, {'abbrev': 'nm', 'chapters': 36},
@@ -121,6 +147,94 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
   void initState() {
     super.initState();
     _initializeReader();
+  }
+
+  Future<void> _loadHighlightsForChapter(String abbrev, int chapter) async {
+    // Limpa anteriores para não misturar se trocar rápido
+    setState(() { _highlights = []; });
+
+    try {
+      final response = await supabase
+          .from('bible_highlights')
+          .select('verse, type, highlight_type, text_match')
+          .eq('book_abbrev', abbrev)
+          .eq('chapter', chapter);
+
+      if (mounted && response.isNotEmpty) {
+        setState(() {
+          _highlights = (response as List)
+              .map((e) => VerseHighlight.fromMap(e))
+              .toList();
+        });
+      }
+    } catch (e) {
+      debugPrint("Erro ao carregar destaques: $e");
+    }
+  }
+
+  List<TextSpan> _buildColoredVerseText(int verseNumber, String originalText) {
+    // 1. Busca destaque
+    final highlight = _highlights.firstWhere(
+      (h) => h.verseNumber == verseNumber,
+      orElse: () => VerseHighlight(verseNumber: -1, type: '', highlightType: ''),
+    );
+
+    // Sem destaque -> Preto
+    if (highlight.verseNumber == -1) {
+      return [TextSpan(text: originalText, style: const TextStyle(color: arcaBlack))];
+    }
+
+    // 2. Define cor
+    final Color highlightColor = highlight.type == 'jesus_speech' ? arcaOrange : arcaBlue;
+    
+    // Estilo destacado (Negrito opcional, ajuda a ler cores claras)
+    final TextStyle coloredStyle = TextStyle(color: highlightColor, fontWeight: FontWeight.w600);
+    final TextStyle normalStyle = const TextStyle(color: arcaBlack);
+
+    // CASO 1: Versículo Completo
+    if (highlight.highlightType == 'full_verse') {
+      return [TextSpan(text: originalText, style: coloredStyle)];
+    }
+
+    // CASO 2: Parcial (Lógica Melhorada)
+    if (highlight.highlightType == 'partial' && highlight.textMatch != null) {
+      // Normalização para busca (remove acentos e lowercase para comparar)
+      // Nota: Para precisão máxima, usamos o texto como está, mas lowercase ajuda.
+      final String fullTextLower = originalText.toLowerCase();
+      final String matchTextLower = highlight.textMatch!.toLowerCase();
+      
+      // Tenta encontrar o trecho
+      final int startIndex = fullTextLower.indexOf(matchTextLower);
+
+      if (startIndex != -1) {
+        final int endIndex = startIndex + matchTextLower.length; 
+        
+        return [
+          // Texto antes (Preto)
+          if (startIndex > 0)
+            TextSpan(text: originalText.substring(0, startIndex), style: normalStyle),
+          
+          // Texto Destacado (Cor) - Usamos o endIndex aqui
+          TextSpan(
+            text: originalText.substring(startIndex, endIndex), 
+            style: coloredStyle
+          ),
+          
+          // Texto depois (Preto) - E usamos o endIndex aqui também
+          if (endIndex < originalText.length)
+            TextSpan(text: originalText.substring(endIndex), style: normalStyle),
+        ];
+      } else {
+        // === A CORREÇÃO ESTÁ AQUI ===
+        // Se era pra ser parcial, mas não achamos o texto no versículo (versões diferentes),
+        // ANTES: Pintava tudo de laranja.
+        // AGORA: Retorna preto (segurança). Melhor não pintar do que pintar errado.
+        debugPrint("ALERTA DE MATCH: Não encontrou '${highlight.textMatch}' em '${originalText}'");
+        return [TextSpan(text: originalText, style: normalStyle)];
+      }
+    }
+
+    return [TextSpan(text: originalText, style: normalStyle)];
   }
 
   Future<void> _initializeReader() async {
@@ -309,7 +423,8 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
         
         _loadFavoritesForThisChapter();
         _saveLastRead(abbrev, chapter);
-        _loadChapterExtras(abbrev, chapter); 
+        _loadChapterExtras(abbrev, chapter);
+        _loadHighlightsForChapter(abbrev, chapter);
 
         if (initialVerseNumber != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -474,7 +589,7 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
     final String textToShare = """
 "${verse.text}"
 
-${_currentBookName} ${_currentChapter}:${verse.number} (${_currentVersion.toUpperCase()})
+$_currentBookName $_currentChapter:${verse.number} (${_currentVersion.toUpperCase()})
 
 Continue a leitura na Arca: https://arca.kordevs.com
 """;
@@ -619,7 +734,7 @@ Continue a leitura na Arca: https://arca.kordevs.com
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(entry.key.toUpperCase(), style: TextStyle(color: entry.key == _currentVersion ? arcaOrange : Colors.grey[600], fontWeight: FontWeight.bold, fontSize: 14)),
+                                    Text(_versionShortLabel(entry.key), style: TextStyle(color: entry.key == _currentVersion ? arcaOrange : Colors.grey[600], fontWeight: FontWeight.bold, fontSize: 14)),
                                     Text(entry.value, style: TextStyle(color: Colors.grey[500], fontSize: 10)),
                                   ],
                                 ),
@@ -656,7 +771,7 @@ Continue a leitura na Arca: https://arca.kordevs.com
               ..._availableVersions.entries.map((entry) {
                 final isSelected = entry.key == _currentVersion;
                 return ListTile(
-                  title: Text(entry.key.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(_versionShortLabel(entry.key), style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(entry.value),
                   trailing: isSelected ? const Icon(Icons.check_circle, color: arcaOrange) : null,
                   onTap: () async {
@@ -975,6 +1090,20 @@ Continue a leitura na Arca: https://arca.kordevs.com
     );
   }
 
+  String _versionShortLabel(String? key) {
+    if (key == null) return '';
+    switch (key.toLowerCase()) {
+      case 'ra':
+        return 'ARA';
+      case 'nvi':
+        return 'NVI';
+      case 'acf':
+        return 'ACF';
+      default:
+        return key.toUpperCase();
+    }
+  }
+
   Widget _buildSearchButton() {
     return IconButton(
       icon: const Icon(Icons.search, color: arcaWhite),
@@ -1015,7 +1144,7 @@ Continue a leitura na Arca: https://arca.kordevs.com
           TextButton(
             onPressed: _showVersionPicker,
             child: Text(
-              _currentVersion.toUpperCase(),
+              _versionShortLabel(_currentVersion),
               style: const TextStyle(color: arcaWhite, fontWeight: FontWeight.bold),
             ),
           ),
@@ -1089,14 +1218,34 @@ Continue a leitura na Arca: https://arca.kordevs.com
                                         borderRadius: BorderRadius.circular(8),
                                      ),
                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                                     child: RichText(text: TextSpan(
-                                        style: DefaultTextStyle.of(context).style.copyWith(fontSize: 18),
-                                        children: [
-                                           TextSpan(text: "${verse.number} ", style: const TextStyle(fontWeight: FontWeight.bold)),
-                                           TextSpan(text: verse.text),
-                                           if (hasNote) const WidgetSpan(alignment: PlaceholderAlignment.middle, child: Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.speaker_notes, size: 16, color: arcaPurple)))
-                                        ]
-                                     )),
+                                     child: RichText(
+                                        text: TextSpan(
+                                          style: DefaultTextStyle.of(context).style.copyWith(fontSize: 18, height: 1.5), // Altura de linha ajuda na leitura
+                                          children: [
+                                              // 1. Número do Versículo
+                                              TextSpan(
+                                                text: "${verse.number}  ", // Espaço extra visual
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold, 
+                                                  color: Colors.black54, 
+                                                  fontSize: 14 // Número um pouco menor fica elegante
+                                                )
+                                              ),
+                                              
+                                              // 2. Texto Processado (Preto, Laranja ou Azul)
+                                              ..._buildColoredVerseText(verse.number, verse.text),
+
+                                              // 3. Ícone de Nota (se houver)
+                                              if (hasNote) const WidgetSpan(
+                                                alignment: PlaceholderAlignment.middle, 
+                                                child: Padding(
+                                                  padding: EdgeInsets.only(left: 4), 
+                                                  child: Icon(Icons.speaker_notes, size: 16, color: arcaPurple)
+                                                )
+                                              )
+                                          ]
+                                        )
+                                      ),
                                    ),
                                  ),
                                );
