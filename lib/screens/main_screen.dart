@@ -158,7 +158,7 @@ class MainScreenState extends State<MainScreen> {
                 BottomNavigationBarItem(
                   icon: Icon(Icons.explore_outlined), 
                   activeIcon: Icon(Icons.explore, color: arcaOrange),
-                  label: 'Jornadas',
+                  label: 'Jornada',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.dehaze_rounded),

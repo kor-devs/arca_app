@@ -113,7 +113,7 @@ class _DevotionalScreenState extends State<DevotionalScreen> {
       }
 
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Amém! Devocional salvo no seu histórico.", style: TextStyle(color: arcaBlack, fontWeight: FontWeight.bold)),
@@ -126,8 +126,15 @@ class _DevotionalScreenState extends State<DevotionalScreen> {
       debugPrint("Erro ao salvar: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Erro ao salvar progresso."))
+          SnackBar(
+            content: Text("Erro: $e"), 
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          )
         );
+        // ScaffoldMessenger.of(context).showSnackBar(
+          // const SnackBar(content: Text("Erro ao salvar progresso."))
+        // );
         setState(() { _isSaving = false; });
       }
     }

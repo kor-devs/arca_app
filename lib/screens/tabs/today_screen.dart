@@ -35,6 +35,8 @@ class TodayScreenState extends State<TodayScreen> {
   int _currentStreak = 0;
   bool _isLoadingStats = true;
 
+  bool _isTodayDevotionalCompleted = false;
+
   Devotional? _todayDevotional;
   
   final TextEditingController _homeSearchController = TextEditingController();
@@ -46,6 +48,10 @@ class TodayScreenState extends State<TodayScreen> {
   final PageController _tutorialController = PageController();
   int _currentTutorialPage = 0;
   bool _isSharing = false;
+
+  // Variáveis para o Check-in Emocional
+  bool _isMoodLoading = false;
+  Map<String, dynamic>? _moodResponseVerse;
 
   final List<Map<String, dynamic>> _badges = [
     // 0 Dias: Sem Medalha
@@ -100,6 +106,46 @@ class TodayScreenState extends State<TodayScreen> {
     },
   ];
 
+  // Lista de Humores para a UI
+  final List<Map<String, dynamic>> _moodOptions = [
+    {
+      'id': 'feliz', 
+      'emoji': '😃', 
+      'label': 'Feliz',
+      'colors': [arcaOrange, arcaYellow] // Energia
+    },
+    {
+      'id': 'grato', 
+      'emoji': '🙏', 
+      'label': 'Grato',
+      'colors': [arcaPurple, Color(0xFF9B59B6)] // Espiritualidade
+    },
+    {
+      'id': 'esperancoso', 
+      'emoji': '🕊️', 
+      'label': 'Com fé',
+      'colors': [arcaBlue, Colors.lightBlueAccent] // Esperança/Céu
+    },
+    {
+      'id': 'ansioso', 
+      'emoji': '😰', 
+      'label': 'Ansioso',
+      'colors': [Color(0xFFE67E22), Color(0xFFF39C12)] // Atenção suave
+    },
+    {
+      'id': 'triste', 
+      'emoji': '😢', 
+      'label': 'Triste',
+      'colors': [Color(0xFF5D6D7E), Color(0xFF85929E)] // Acolhimento (Azul acinzentado)
+    },
+    {
+      'id': 'cansado', 
+      'emoji': '😫', 
+      'label': 'Cansado',
+      'colors': [Color(0xFF7F8C8D), Color(0xFFBDC3C7)] // Descanso (Cinza neutro)
+    },
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -107,8 +153,107 @@ class TodayScreenState extends State<TodayScreen> {
     _generateGreeting();
     _checkTutorialStatus();
     _startAutoScroll();
-    _fetchUserStats();
-    _fetchNextDevotional();
+    _fetchDataAndRegisterActivity();
+  }
+
+  Future<void> _fetchDataAndRegisterActivity() async {
+    // 1. Registra o "Login" para contar no Streak
+    await _registerUserActivity('LOGIN');
+    
+    // 2. Carrega dados (Devocional e Stats atualizados)
+    _fetchTodayDevotional();
+    // _fetchUserStats(); // Não precisa chamar separado se o _registerUserActivity já atualizar o local state, mas por segurança pode manter ou remover
+  }
+
+  Future<void> _registerUserActivity(String type) async {
+    try {
+      // Chama a RPC (Function) do Supabase criada no Passo 1
+      final response = await supabase.rpc('handle_user_activity', params: {
+        'p_activity_type': type
+      });
+      
+      if (response != null && mounted) {
+        debugPrint("Activity Logged: $response");
+        setState(() {
+          _currentStreak = response['streak'];
+          _isLoadingStats = false;
+        });
+        
+        // Opcional: Mostrar SnackBar se o streak subiu
+        if (response['message'].toString().contains('subiu')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Parabéns! ${response['message']}"), backgroundColor: arcaOrange)
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Erro ao registrar atividade: $e");
+      // Fallback: tenta carregar o antigo se der erro na RPC
+      _fetchUserStats();
+    }
+  }
+
+  Future<void> _handleMoodSelection(String moodId) async {
+    setState(() {
+      _isMoodLoading = true;
+    });
+
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        // 1. Salva o Log de Humor (Mantém o histórico)
+        // Nota: A tabela user_mood_logs continua necessária para o histórico do usuário
+        await supabase.from('user_mood_logs').insert({
+          'user_id': user.id,
+          'mood': moodId,
+        });
+
+        // 2. Busca versículo na curated_verses via RPC
+        // Passamos o 'moodId' como a tag a ser buscada (ex: 'ansioso')
+        final response = await supabase
+            .rpc('get_verse_by_mood', params: {'p_mood_tag': moodId});
+
+        if (response != null && mounted) {
+          // O response é um Map<String, dynamic> vindo do JSONB
+          setState(() {
+            _moodResponseVerse = {
+              'text': response['text'], // Campo da curated_verses
+              'ref': response['reference'], // Campo da curated_verses
+              
+              // Campos de Navegação (cruciais para o clique funcionar)
+              'abbrev': response['book_abbrev'],
+              'chapter': response['chapter'],
+              'verse': response['verse_number'], // Atenção: seu JSON usa verse_number
+              
+              // Extra: Podemos usar a imagem de fundo se quiser no futuro
+              'image': response['image_url'] 
+            };
+          });
+        } else {
+          // Caso não encontre nenhum versículo com essa tag
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Recebemos seu sentimento. Estamos orando por você."))
+            );
+            setState(() {
+              _moodResponseVerse = null;
+            });
+          }
+        }
+        
+        // 3. Atualiza Streak (Gamification)
+        _registerUserActivity('MOOD_CHECKIN');
+      }
+    } catch (e) {
+      debugPrint("Erro mood: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Erro ao conectar. Tente novamente."))
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isMoodLoading = false);
+    }
   }
 
   @override
@@ -191,51 +336,67 @@ class TodayScreenState extends State<TodayScreen> {
     }
   }
 
-  Future<void> _fetchNextDevotional() async {
+  Future<void> _fetchTodayDevotional() async {
     final user = supabase.auth.currentUser;
-    if (user == null) return;
+    final now = DateTime.now();
+    final startOfYear = DateTime(now.year, 1, 1);
+    final dayOfYear = now.difference(startOfYear).inDays + 1;
 
     try {
-      // 1. Busca IDs já lidos
-      final readResponse = await supabase
-          .from('user_devotionals')
-          .select('devotional_id')
-          .eq('user_id', user.id);
-      
-      final List<int> readIds = (readResponse as List)
-          .map<int>((e) => e['devotional_id'] as int)
-          .toList();
-
-      // 2. Query corrigida
-      var query = supabase.from('devotionals').select();
-      
-      if (readIds.isNotEmpty) {
-        // [CORREÇÃO] Sintaxe correta para 'not in' no Dart Supabase v2
-        // Usa-se o filtro .not('coluna', 'operador', valor)
-        // O operador para IN é 'in', logo para NOT IN usamos filter com 'not.in' ou a combinação abaixo:
-        
-        // Opção A (Mais compatível com versões recentes):
-        query = query.not('id', 'in', '(${readIds.join(',')})');
-      }
-
-      final response = await query
-          .order('day_of_year', ascending: true)
-          .limit(1)
+      // --- MUDANÇA CRÍTICA AQUI ---
+      // Adicionamos ', curated_verses(*)' para trazer o versículo vinculado
+      final response = await supabase
+          .from('devotionals')
+          .select('*, curated_verses(*)') 
+          .eq('day_of_year', dayOfYear)
           .maybeSingle();
 
       if (response != null && mounted) {
-        setState(() {
-          _todayDevotional = Devotional.fromJson(response);
-        });
-      } else {
-        // Fallback se leu todos
-        final fallback = await supabase.from('devotionals').select().limit(1).maybeSingle();
-        if (fallback != null && mounted) {
-           setState(() { _todayDevotional = Devotional.fromJson(fallback); });
+        final devotional = Devotional.fromJson(response);
+        
+        // --- 1. LÓGICA DO VERSÍCULO VINCULADO ---
+        RandomVerse? linkedVerse;
+        
+        if (response['curated_verses'] != null) {
+          // O Supabase encontrou o versículo vinculado!
+          debugPrint(">>> VÍNCULO ENCONTRADO: ${response['curated_verses']['reference']}");
+          
+          linkedVerse = RandomVerse.fromJson(response['curated_verses']);
+          
+          // FORÇA a atualização do card "Versículo do Dia"
+          setState(() {
+            futureVerseOfTheDay = Future.value(linkedVerse);
+          });
+        } else {
+          debugPrint(">>> SEM VÍNCULO. Buscando aleatório...");
         }
+
+        // --- 2. LÓGICA DE LEITURA CONCLUÍDA ---
+        bool isCompleted = false;
+        if (user != null) {
+          final readCheck = await supabase
+              .from('user_devotionals')
+              .select()
+              .eq('user_id', user.id)
+              .eq('devotional_id', devotional.id)
+              .maybeSingle();
+
+          if (readCheck != null) isCompleted = true;
+        }
+
+        // Atualiza a tela com a devocional
+        setState(() {
+          _todayDevotional = devotional;
+          _isTodayDevotionalCompleted = isCompleted;
+        });
+
+      } else {
+        // Fallback se não achar devocional do dia
+        debugPrint("--- Nenhum devocional para o dia $dayOfYear ---");
+        // ... (seu código de fallback pode ficar aqui se quiser)
       }
     } catch (e) {
-      debugPrint("Erro devocional: $e");
+      debugPrint("Erro CRÍTICO no devocional: $e");
     }
   }
 
@@ -283,174 +444,93 @@ class TodayScreenState extends State<TodayScreen> {
 
   // --- UI COMPONENTS ---
 
-  // [NOVO] Card de Devocional Compacto e Chamativo
-  Widget _buildDevotionalEntry() {
-    // Se não carregou ainda, não mostra
-    if (_todayDevotional == null) return const SizedBox.shrink();
-
-    final dev = _todayDevotional!;
-    final DateTime now = DateTime.now();
-    final String dateString = "${now.day}/${now.month}";
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 4.0, bottom: 8.0),
-          child: Text(
-            "DEVOCIONAL DO DIA",
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
-              color: arcaPurple,
-            ),
+  Widget _buildMoodTracker() {
+    // === ESTADO: VERSÍCULO DE RESPOSTA (Mantém o design aprovado) ===
+    if (_moodResponseVerse != null) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [arcaPurple.withOpacity(0.05), arcaPurple.withOpacity(0.15)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: arcaPurple.withOpacity(0.3)),
         ),
-        Container(
-          margin: const EdgeInsets.only(bottom: 24),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E2C), // Fundo Dark
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
             borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 15,
-                offset: const Offset(0, 8),
-              )
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (ctx) => DevotionalScreen(
-                      devotionalId: dev.id,
-                      initialData: dev,
-                      onJumpToBible: (abbrev, chapter, verse) {
-                        final mainScreen = context.findAncestorStateOfType<MainScreenState>();
-                        mainScreen?.jumpToBible(abbrev, chapter, verse);
-                      },
-                    ),
-                  ),
+            onTap: () {
+              if (_moodResponseVerse!['abbrev'] != null && 
+                  _moodResponseVerse!['chapter'] != null) {
+                final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+                mainScreen?.jumpToBible(
+                  _moodResponseVerse!['abbrev'], 
+                  _moodResponseVerse!['chapter'], 
+                  _moodResponseVerse!['verse'] ?? 1
                 );
-              },
-              borderRadius: BorderRadius.circular(20),
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(20),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Imagem de Capa
-                  Stack(
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-                        child: SizedBox(
-                          height: 140,
-                          width: double.infinity,
-                          child: CachedNetworkImage(
-                            imageUrl: dev.imageUrl,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(color: Colors.grey[900]),
-                            errorWidget: (context, url, error) => Container(
-                              color: Colors.grey[850], 
-                              child: const Icon(Icons.broken_image, color: Colors.white24)
-                            ),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(color: arcaPurple.withOpacity(0.1), shape: BoxShape.circle),
+                            child: const Icon(Icons.auto_awesome, size: 16, color: arcaPurple),
                           ),
-                        ),
+                          const SizedBox(width: 10),
+                          Text("Palavra para seu coração:", 
+                            style: TextStyle(color: arcaPurple.withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.bold)
+                          ),
+                        ],
                       ),
-                      // Gradiente Fade
-                      Positioned.fill(
+                      InkWell(
+                        onTap: () => setState(() { _moodResponseVerse = null; }),
                         child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                const Color(0xFF1E1E2C).withOpacity(0.0),
-                                const Color(0xFF1E1E2C),
-                              ],
-                              stops: const [0.0, 0.6, 1.0],
-                            ),
-                          ),
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(color: Colors.grey.withOpacity(0.1), shape: BoxShape.circle),
+                          child: const Icon(Icons.close, size: 18, color: Colors.grey),
                         ),
-                      ),
-                      // Badge Data/Tema
-                      Positioned(
-                        top: 16,
-                        left: 16,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.calendar_today, size: 12, color: arcaOrange),
-                              const SizedBox(width: 6),
-                              Text(
-                                "$dateString • ${dev.theme.toUpperCase()}",
-                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      )
                     ],
                   ),
-
-                  // Conteúdo
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 16),
+                  Text(
+                    '"${_moodResponseVerse!['text']}"',
+                    style: const TextStyle(
+                      fontSize: 16, 
+                      height: 1.4,
+                      fontFamily: 'Georgia',
+                      fontStyle: FontStyle.italic, 
+                      color: Color(0xFF2C3E50)
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: arcaOrange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
-                            const SizedBox(width: 6),
-                            Text(
-                              "Leitura de ${dev.duration}",
-                              style: const TextStyle(color: Colors.grey, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
                         Text(
-                          dev.title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            height: 1.2,
-                          ),
+                          _moodResponseVerse!['ref']!.toUpperCase(),
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: arcaOrange),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          "Baseado em ${dev.verseReference}",
-                          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14, fontStyle: FontStyle.italic),
-                        ),
-                        const SizedBox(height: 20),
-                        
-                        // Botão Fake (Visual)
-                        SizedBox(
-                          width: double.infinity,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: arcaOrange,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Text("LER DEVOCIONAL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                          ),
-                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.arrow_forward, size: 12, color: arcaOrange)
                       ],
                     ),
                   ),
@@ -459,9 +539,311 @@ class TodayScreenState extends State<TodayScreen> {
             ),
           ),
         ),
+      );
+    }
+
+    // === ESTADO: BOTÕES VIBRANTES (Fixos) ===
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4.0, bottom: 12.0),
+          child: Text(
+            "COMO ESTÁ SE SENTINDO HOJE?",
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+              color: arcaPurple,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 100,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _moodOptions.length,
+            clipBehavior: Clip.none,
+            separatorBuilder: (c, i) => const SizedBox(width: 12),
+            padding: const EdgeInsets.all(4), // Padding para a sombra não cortar
+            itemBuilder: (context, index) {
+              final item = _moodOptions[index];
+              final List<Color> gradientColors = item['colors'];
+
+              return Container(
+                width: 72, // Tamanho fixo
+                decoration: BoxDecoration(
+                  // Gradiente sempre visível e vibrante
+                  gradient: LinearGradient(
+                    colors: gradientColors,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  // Sombra colorida suave sempre visível
+                  boxShadow: [
+                    BoxShadow(
+                      color: gradientColors[0].withOpacity(0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    )
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _isMoodLoading ? null : () => _handleMoodSelection(item['id']),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          item['emoji'], 
+                          style: const TextStyle(fontSize: 28)
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          item['label'],
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white, // Texto branco para contraste no fundo colorido
+                            shadows: [
+                              Shadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))
+                            ]
+                          ),
+                          textAlign: TextAlign.center,
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
+
+  Widget _buildDevotionalEntry() {
+  // Se não carregou ainda, não mostra
+  if (_todayDevotional == null) return const SizedBox.shrink();
+
+  final dev = _todayDevotional!;
+  
+  // --- Definição da Variável (O erro estava aqui pois ela não era usada abaixo) ---
+  final DateTime now = DateTime.now();
+  final String dateString = "${now.day}/${now.month}"; 
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Padding(
+        padding: EdgeInsets.only(left: 4.0, bottom: 8.0),
+        child: Text(
+          "DEVOCIONAL DO DIA",
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.0,
+            color: arcaPurple, // Certifique-se que essa cor existe nas suas constants
+          ),
+        ),
+      ),
+      Container(
+        margin: const EdgeInsets.only(bottom: 24),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E2C), // Fundo Dark
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            )
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () async {
+              // Navegação esperando retorno para atualizar o check imediatamente
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (ctx) => DevotionalScreen(
+                    devotionalId: dev.id,
+                    initialData: dev,
+                    onJumpToBible: (abbrev, chapter, verse) {
+                      final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+                      mainScreen?.jumpToBible(abbrev, chapter, verse);
+                    },
+                  ),
+                ),
+              );
+              
+              // Se retornou true (concluiu), atualizamos a tela
+              if (result == true) {
+                setState(() {
+                  _isTodayDevotionalCompleted = true;
+                });
+              }
+            },
+            borderRadius: BorderRadius.circular(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Imagem de Capa
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+                      child: SizedBox(
+                        height: 140,
+                        width: double.infinity,
+                        child: CachedNetworkImage(
+                          imageUrl: dev.imageUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => Container(color: Colors.grey[900]),
+                          errorWidget: (context, url, error) => Container(
+                            color: Colors.grey[850], 
+                            child: const Icon(Icons.broken_image, color: Colors.white24)
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Gradiente Fade
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              const Color(0xFF1E1E2C).withOpacity(0.0),
+                              const Color(0xFF1E1E2C),
+                            ],
+                            stops: const [0.0, 0.6, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
+                    
+                    // --- 1. BADGE ESQUERDA: DATA E TEMA (Onde usamos dateString) ---
+                    Positioned(
+                      top: 16,
+                      left: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today, size: 12, color: arcaOrange),
+                            const SizedBox(width: 6),
+                            // AQUI ESTÁ O USO DA VARIÁVEL dateString
+                            Text(
+                              "$dateString • ${dev.theme.toUpperCase()}",
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // --- 2. BADGE DIREITA: CONCLUÍDO (Novo) ---
+                    if (_isTodayDevotionalCompleted)
+                      Positioned(
+                        top: 16,
+                        right: 16,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: arcaNeonGreen, // Certifique-se de ter essa cor ou use Colors.greenAccent
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.check_circle, size: 12, color: Colors.black),
+                              SizedBox(width: 4),
+                              Text(
+                                "CONCLUÍDO",
+                                style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+
+                // Conteúdo
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                          const SizedBox(width: 6),
+                          Text(
+                            "Leitura de ${dev.duration}",
+                            style: const TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        dev.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "Baseado em ${dev.verseReference}",
+                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14, fontStyle: FontStyle.italic),
+                      ),
+                      const SizedBox(height: 20),
+                      
+                      // Botão de Ação (Adapta a cor se concluído)
+                      SizedBox(
+                        width: double.infinity,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _isTodayDevotionalCompleted ? Colors.green.withOpacity(0.8) : arcaOrange,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                             _isTodayDevotionalCompleted ? "LER NOVAMENTE" : "LER DEVOCIONAL",
+                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 0.5)
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
 
   Widget _buildTutorialCard() {
     if (!_showTutorial) return const SizedBox.shrink();
@@ -801,6 +1183,9 @@ class TodayScreenState extends State<TodayScreen> {
                   _buildTutorialCard(),
                   const SizedBox(height: 20),
 
+                  _buildMoodTracker(),
+                  const SizedBox(height: 20),
+
                   // 2. Versículo
                   _buildVerseOfTheDayCard(),
                   const SizedBox(height: 20),
@@ -888,7 +1273,7 @@ class TodayScreenState extends State<TodayScreen> {
       await Future.wait([
         futureVerseOfTheDay,
         _fetchUserStats(),
-        _fetchNextDevotional(),
+        _fetchTodayDevotional(),
       ]);
     } catch (e) {
       // ignore errors silently; RefreshIndicator will stop spinning
