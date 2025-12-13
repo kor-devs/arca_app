@@ -138,7 +138,7 @@ class _DevotionalScreenState extends State<DevotionalScreen> {
     }
   }
 
-  void _shareDevotional() {
+  void _shareDevotional() async{
     if (_devotional == null) return;
     final text = """
 📖 *Devocional - ${_devotional!.title}*
@@ -155,7 +155,13 @@ ${_devotional!.reflectionContent}
 Arca, sua companheira na jornada espiritual!
 🔗 arca.kordevs.com
 """;
-    Share.share(text);
+    await Share.share(text);
+    try {
+      await supabase.rpc('track_user_share', params: {
+        'p_resource_type': 'DEVOTIONAL', 
+        'p_reference': _devotional!.title
+      });
+    } catch (_) {}
   }
 
   // [CORRIGIDO] Método de Navegação
@@ -329,10 +335,11 @@ Arca, sua companheira na jornada espiritual!
                    const _SectionHeader(icon: Icons.school_outlined, title: "Estudo da Palavra"),
                    const SizedBox(height: 10),
                    Text(
-                     _devotional!.theologyContent,
-                     style: const TextStyle(fontSize: 16, height: 1.6, color: Colors.black87),
-                     textAlign: TextAlign.justify,
-                   ),
+                    // Corrige a quebra de linha literal
+                    _devotional!.theologyContent.replaceAll('\\n', '\n'),
+                    style: const TextStyle(fontSize: 16, height: 1.6, color: Colors.black87),
+                    textAlign: TextAlign.justify,
+                    ),
 
                    const Padding(
                      padding: EdgeInsets.symmetric(vertical: 24.0),
@@ -342,7 +349,7 @@ Arca, sua companheira na jornada espiritual!
                    const _SectionHeader(icon: Icons.favorite_border, title: "Para o Coração"),
                    const SizedBox(height: 10),
                    Text(
-                     _devotional!.reflectionContent,
+                     _devotional!.reflectionContent.replaceAll('\\n', '\n'),
                      style: const TextStyle(fontSize: 16, height: 1.6, color: Colors.black87),
                      textAlign: TextAlign.justify,
                    ),

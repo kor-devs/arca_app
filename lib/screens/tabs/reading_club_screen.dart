@@ -58,6 +58,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
   // --- CONTROLLERS ---
   late AnimationController _floatController;
   late TabController _modalTabController;
+  final ScrollController _scrollController = ScrollController();
 
   // Níveis de Gamificação (XP necessário para subir)
   final List<int> _levelMilestones = [5, 15, 30, 60, 150, 365];
@@ -74,6 +75,11 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     )..repeat(reverse: true);
 
     _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
   }
 
   @override
@@ -280,6 +286,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
             children: [
               // CAMADA 1: MAPA ROLÁVEL
               SingleChildScrollView(
+                controller: _scrollController,
                 physics: const BouncingScrollPhysics(),
                 child: Container(
                   height: mapHeight,
@@ -348,7 +355,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
                         subLabel: "$_streak / 7 Dias",
                         progress: _getDevotionalProgress(),
                         color: Colors.redAccent,
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Mantenha o fogo aceso! Meta: 30 dias."))),
+                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Mantenha o fogo aceso! Meta: 7 dias."))),
                       ),
 
                       // 3. ESQUERDA: SEMEAR (Compartilhamento)
@@ -884,16 +891,52 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     try {
       final user = supabase.auth.currentUser;
       if (user == null) return;
-      setState(() {
-        final index = _myActivePlans.indexWhere((p) => p['id'] == activePlanId);
-        if (index != -1) _myActivePlans[index]['current_day'] = dayNumber + 1;
-        _streak += 1; _totalDevotionalsRead += 1; 
+
+      // 1. Atualiza o plano de leitura no banco
+      await supabase.from('user_active_plans').update({
+        'current_day': dayNumber + 1,
+        'last_read_at': DateTime.now().toIso8601String()
+      }).eq('id', activePlanId);
+
+      // 2. [CORREÇÃO] Chama a função correta de Streak e XP
+      // (Substituindo a antiga 'increment_streak' que não existe mais)
+      final response = await supabase.rpc('handle_user_activity', params: {
+        'p_activity_type': 'PLANO_LEITURA'
       });
-      await supabase.from('user_active_plans').update({'current_day': dayNumber + 1, 'last_read_at': DateTime.now().toIso8601String()}).eq('id', activePlanId);
-      await supabase.rpc('increment_streak', params: {'user_uuid': user.id});
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Leitura concluída! 🔥"), backgroundColor: arcaNeonGreen));
+
+      // 3. Atualiza UI com os dados reais retornados do banco
+      if (mounted) {
+        setState(() {
+          // Atualiza progresso do plano visualmente
+          final index = _myActivePlans.indexWhere((p) => p['id'] == activePlanId);
+          if (index != -1) {
+            _myActivePlans[index]['current_day'] = dayNumber + 1;
+          }
+          
+          // Atualiza Streak e XP com a resposta do RPC
+          if (response != null) {
+            _streak = response['streak'] ?? _streak + 1;
+            // Se o usuário ganhou XP, subimos o contador visualmente
+            _totalDevotionalsRead += 1; 
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Leitura concluída! 🔥 Continue firme no propósito!"), 
+            backgroundColor: arcaNeonGreen,
+            behavior: SnackBarBehavior.floating,
+          )
+        );
+      }
+      
+      // Recarrega em background para garantir sincronia total
       _loadData(); 
-    } catch (e) { _loadData(); }
+
+    } catch (e) {
+      debugPrint("Erro ao completar: $e");
+      _loadData(); // Reverte em caso de erro
+    }
   }
 
   Future<void> _readDay(Map<String, dynamic> activePlan) async {

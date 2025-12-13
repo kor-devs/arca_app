@@ -179,7 +179,9 @@ class BibleReaderScreenState extends State<BibleReaderScreen> {
 
       // 2. Incrementa Streak (Opcional - Não bloqueia o fluxo se falhar)
       try {
-        await supabase.rpc('increment_streak', params: {'user_uuid': user.id});
+        await supabase.rpc('handle_user_activity', params: {
+          'p_activity_type': 'PLANO_LEITURA'
+        });
       } catch (rpcError) {
         debugPrint("Aviso: Falha ao atualizar ofensiva (ignorado): $rpcError");
       }

@@ -41,6 +41,7 @@ class TodayScreenState extends State<TodayScreen> {
   
   final TextEditingController _homeSearchController = TextEditingController();
   final ScreenshotController _screenshotController = ScreenshotController();
+  final ScreenshotController _moodScreenshotController = ScreenshotController();
 
   // --- CONTROLE DO TUTORIAL ---
   Timer? _carouselTimer;
@@ -145,6 +146,26 @@ class TodayScreenState extends State<TodayScreen> {
       'colors': [const Color(0xFF7F8C8D), const Color(0xFFBDC3C7)] // Descanso (Cinza neutro)
     },
   ];
+
+  void _shareMoodVerse() async {
+    setState(() { _isSharing = true; });
+    // Pequeno delay para garantir renderização
+    await Future.delayed(const Duration(milliseconds: 50)); 
+    try {
+      final Uint8List? imageBytes = await _moodScreenshotController.capture();
+      setState(() { _isSharing = false; });
+      
+      if (imageBytes != null) {
+        final xFile = XFile.fromData(imageBytes, mimeType: 'image/png', name: 'humor_arca.png');
+        await Share.shareXFiles([xFile], text: "Uma palavra para o seu coração hoje ❤️\n\nAcesse: https://arca.kordevs.com");
+        try { await supabase.rpc('track_user_share', params: {'p_resource_type': 'MOOD', 'p_reference': 'humor'}); } catch (_) {}
+      }
+
+    } catch (e) {
+      debugPrint("Erro share mood: $e");
+      setState(() { _isSharing = false; });
+    }
+  }
 
   @override
   void initState() {
@@ -434,6 +455,7 @@ class TodayScreenState extends State<TodayScreen> {
       if (imageBytes != null) {
         final xFile = XFile.fromData(imageBytes, mimeType: 'image/png', name: 'versiculo_arca.png');
         await Share.shareXFiles([xFile], text: "\"${verse.text}\"${verse.reference} \n \n Continue a leitura na Arca: arca.kordevs.com");
+        try { await supabase.rpc('track_user_share', params: {'p_resource_type': 'VERSE_DAY', 'p_reference': verse.reference}); } catch (_) {}
         try { await supabase.rpc('increment_verse_share', params: {'p_verse_ref': verse.reference}); } catch (_) {}
       }
     } catch (e) {
@@ -447,94 +469,117 @@ class TodayScreenState extends State<TodayScreen> {
   Widget _buildMoodTracker() {
     // === ESTADO: VERSÍCULO DE RESPOSTA (Mantém o design aprovado) ===
     if (_moodResponseVerse != null) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 24),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [arcaPurple.withOpacity(0.05), arcaPurple.withOpacity(0.15)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: arcaPurple.withOpacity(0.3)),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
+      return Screenshot( // 1. Envolvemos com Screenshot
+        controller: _moodScreenshotController,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          decoration: BoxDecoration(
+            color: arcaWhite, // Fundo sólido necessário para o print sair limpo
             borderRadius: BorderRadius.circular(20),
-            onTap: () {
-              if (_moodResponseVerse!['abbrev'] != null && 
-                  _moodResponseVerse!['chapter'] != null) {
-                final mainScreen = context.findAncestorStateOfType<MainScreenState>();
-                mainScreen?.jumpToBible(
-                  _moodResponseVerse!['abbrev'], 
-                  _moodResponseVerse!['chapter'], 
-                  _moodResponseVerse!['verse'] ?? 1
-                );
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(color: arcaPurple.withOpacity(0.1), shape: BoxShape.circle),
-                            child: const Icon(Icons.auto_awesome, size: 16, color: arcaPurple),
-                          ),
-                          const SizedBox(width: 10),
-                          Text("Palavra para seu coração:", 
-                            style: TextStyle(color: arcaPurple.withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.bold)
-                          ),
-                        ],
-                      ),
-                      InkWell(
-                        onTap: () => setState(() { _moodResponseVerse = null; }),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(color: Colors.grey.withOpacity(0.1), shape: BoxShape.circle),
-                          child: const Icon(Icons.close, size: 18, color: Colors.grey),
-                        ),
-                      )
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '"${_moodResponseVerse!['text']}"',
-                    style: const TextStyle(
-                      fontSize: 16, 
-                      height: 1.4,
-                      fontFamily: 'Georgia',
-                      fontStyle: FontStyle.italic, 
-                      color: Color(0xFF2C3E50)
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: arcaOrange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+            border: Border.all(color: arcaPurple.withOpacity(0.3)),
+            boxShadow: [
+               BoxShadow(color: arcaPurple.withOpacity(0.05), blurRadius: 10, offset: const Offset(0,4))
+            ]
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () {
+                if (_moodResponseVerse!['abbrev'] != null && 
+                    _moodResponseVerse!['chapter'] != null) {
+                  final mainScreen = context.findAncestorStateOfType<MainScreenState>();
+                  mainScreen?.jumpToBible(
+                    _moodResponseVerse!['abbrev'], 
+                    _moodResponseVerse!['chapter'], 
+                    _moodResponseVerse!['verse'] ?? 1
+                  );
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          _moodResponseVerse!['ref']!.toUpperCase(),
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: arcaOrange),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(color: arcaPurple.withOpacity(0.1), shape: BoxShape.circle),
+                              child: const Icon(Icons.auto_awesome, size: 16, color: arcaPurple),
+                            ),
+                            const SizedBox(width: 10),
+                            Text("Para seu coração:", 
+                              style: TextStyle(color: arcaPurple.withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.bold)
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.arrow_forward, size: 12, color: arcaOrange)
+                        // Botoes de Ação
+                        Row(
+                          children: [
+                            // 2. Botão de Compartilhar NOVO
+                            if (!_isSharing) // Esconde o botão durante o print
+                            InkWell(
+                              onTap: _shareMoodVerse,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(color: arcaOrange.withOpacity(0.1), shape: BoxShape.circle),
+                                child: const Icon(Icons.share, size: 16, color: arcaOrange),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => setState(() { _moodResponseVerse = null; }),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(color: Colors.grey.withOpacity(0.1), shape: BoxShape.circle),
+                                child: const Icon(Icons.close, size: 18, color: Colors.grey),
+                              ),
+                            ),
+                          ],
+                        )
                       ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    Text(
+                      '"${_moodResponseVerse!['text']}"',
+                      style: const TextStyle(
+                        fontSize: 16, 
+                        height: 1.4,
+                        fontFamily: 'Georgia',
+                        fontStyle: FontStyle.italic, 
+                        color: Color(0xFF2C3E50)
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: arcaOrange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _moodResponseVerse!['ref']!.toUpperCase(),
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: arcaOrange),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.arrow_forward, size: 12, color: arcaOrange)
+                        ],
+                      ),
+                    ),
+                    if (_isSharing) // Marca d'água apenas no print
+                      const Padding(
+                        padding: EdgeInsets.only(top: 10),
+                        child: Text("@entrenaarca", style: TextStyle(color: Colors.grey, fontSize: 10)),
+                      )
+                  ],
+                ),
               ),
             ),
           ),
@@ -668,7 +713,7 @@ class TodayScreenState extends State<TodayScreen> {
           color: Colors.transparent,
           child: InkWell(
             onTap: () async {
-              // Navegação esperando retorno para atualizar o check imediatamente
+              // Navegação
               final result = await Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -683,11 +728,18 @@ class TodayScreenState extends State<TodayScreen> {
                 ),
               );
               
-              // Se retornou true (concluiu), atualizamos a tela
+              // Se retornou true (concluiu)
               if (result == true) {
                 setState(() {
                   _isTodayDevotionalCompleted = true;
                 });
+                
+                // [IMPORTANTE] Delay para o banco processar o update do streak antes de lermos
+                await Future.delayed(const Duration(seconds: 1));
+                
+                // Agora sim buscamos o dado atualizado
+                await _fetchUserStats(); 
+                _registerUserActivity('LEITURA_CONCLUIDA');
               }
             },
             borderRadius: BorderRadius.circular(20),

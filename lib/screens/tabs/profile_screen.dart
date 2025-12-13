@@ -19,10 +19,15 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
 
-  void _inviteFriends(BuildContext context) {
+  void _inviteFriends(BuildContext context) async{
     const String appUrl = "https://play.google.com/store/apps/details?id=com.example.arca_app"; 
     const String message = "Olá! Estou usando o app Arca para minha jornada espiritual. Baixe você também!\n\n$appUrl";
-    Share.share(message);
+    await Share.share(message);
+    try {
+      await supabase.rpc('track_user_invite'); // Chama a função que criamos no SQL
+    } catch (e) {
+      debugPrint("Erro ao contar convite: $e");
+    }
   }
 
   void _signOut(BuildContext context) {
