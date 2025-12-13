@@ -76,13 +76,11 @@ class _DevotionalScreenState extends State<DevotionalScreen> {
           .eq('day_of_year', realDayOfYear)
           .maybeSingle();
 
-      if (response == null) {
-        response = await supabase
+      response ??= await supabase
             .from('devotionals')
             .select()
             .limit(1)
             .maybeSingle();
-      }
 
       if (mounted && response != null) {
         setState(() {
@@ -295,7 +293,7 @@ Arca, sua companheira na jornada espiritual!
                      decoration: BoxDecoration(
                        color: arcaPurple.withOpacity(0.05),
                        borderRadius: BorderRadius.circular(12),
-                       border: Border(left: BorderSide(color: arcaPurple, width: 4))
+                       border: const Border(left: BorderSide(color: arcaPurple, width: 4))
                      ),
                      child: Column(
                        crossAxisAlignment: CrossAxisAlignment.start,

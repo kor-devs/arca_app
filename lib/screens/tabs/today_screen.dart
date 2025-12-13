@@ -118,7 +118,7 @@ class TodayScreenState extends State<TodayScreen> {
       'id': 'grato', 
       'emoji': '🙏', 
       'label': 'Grato',
-      'colors': [arcaPurple, Color(0xFF9B59B6)] // Espiritualidade
+      'colors': [arcaPurple, const Color(0xFF9B59B6)] // Espiritualidade
     },
     {
       'id': 'esperancoso', 
@@ -130,19 +130,19 @@ class TodayScreenState extends State<TodayScreen> {
       'id': 'ansioso', 
       'emoji': '😰', 
       'label': 'Ansioso',
-      'colors': [Color(0xFFE67E22), Color(0xFFF39C12)] // Atenção suave
+      'colors': [const Color(0xFFE67E22), const Color(0xFFF39C12)] // Atenção suave
     },
     {
       'id': 'triste', 
       'emoji': '😢', 
       'label': 'Triste',
-      'colors': [Color(0xFF5D6D7E), Color(0xFF85929E)] // Acolhimento (Azul acinzentado)
+      'colors': [const Color(0xFF5D6D7E), const Color(0xFF85929E)] // Acolhimento (Azul acinzentado)
     },
     {
       'id': 'cansado', 
       'emoji': '😫', 
       'label': 'Cansado',
-      'colors': [Color(0xFF7F8C8D), Color(0xFFBDC3C7)] // Descanso (Cinza neutro)
+      'colors': [const Color(0xFF7F8C8D), const Color(0xFFBDC3C7)] // Descanso (Cinza neutro)
     },
   ];
 

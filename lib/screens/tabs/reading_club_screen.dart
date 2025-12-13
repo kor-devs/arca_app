@@ -29,7 +29,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
   int _totalDevotionalsRead = 0; 
   int _totalShares = 0;
   int _totalInvites = 0;
-  int _totalPlansCompleted = 0;
+  final int _totalPlansCompleted = 0;
 
   // 1. Base: Progresso do Plano Atual
   double _getPlansProgress() {
@@ -270,7 +270,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     final levelInfo = _calculateLevelInfo();
     final biomeColors = levelInfo['biomeColors'] as List<Color>;
     final double screenWidth = MediaQuery.of(context).size.width;
-    final double mapHeight = 1400; // Altura para caber tudo
+    const double mapHeight = 1400; // Altura para caber tudo
 
     return Scaffold(
       backgroundColor: biomeColors[0],
@@ -348,7 +348,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
                         subLabel: "$_streak / 7 Dias",
                         progress: _getDevotionalProgress(),
                         color: Colors.redAccent,
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Mantenha o fogo aceso! Meta: 30 dias."))),
+                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Mantenha o fogo aceso! Meta: 30 dias."))),
                       ),
 
                       // 3. ESQUERDA: SEMEAR (Compartilhamento)
