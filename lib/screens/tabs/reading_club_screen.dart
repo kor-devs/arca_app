@@ -9,6 +9,8 @@ import '../../main.dart';
 import '../../constants.dart';
 import '../main_screen.dart';
 import '../../services/notification_service.dart';
+import '../reading_flow/devotional_screen.dart';
+
 
 class ReadingClubScreen extends StatefulWidget {
   const ReadingClubScreen({super.key});
@@ -29,9 +31,18 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
   int _totalDevotionalsRead = 0; 
   int _totalShares = 0;
   int _totalInvites = 0;
-  final int _totalPlansCompleted = 0;
+  //final int _totalPlansCompleted = 0;
+  
+  // O Ciclo é baseado no nível atual. Nível 1 = Ciclo 1. Nível 2 = Ciclo 2.
+  int get _currentCycle => _calculateLevelInfo()['level'] as int;
 
-  // 1. Base: Progresso do Plano Atual
+  // Metas Escalonáveis (Multiplicam pelo ciclo atual)
+  // Ex: Ciclo 1 = 7 dias. Ciclo 2 = 14 dias. Ciclo 3 = 21 dias.
+  int get _targetIntimacy => 7 * _currentCycle;
+  int get _targetShares => 20 * _currentCycle;
+  int get _targetInvites => 10 * _currentCycle;
+
+  // 1. Base: Progresso do Plano Atual (Mantido)
   double _getPlansProgress() {
     if (_myActivePlans.isEmpty) return 0.0;
     final plan = _myActivePlans.first;
@@ -40,19 +51,160 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     return (current / total).clamp(0.0, 1.0);
   }
 
-  // 2. Meio: Intimidade (Meta: Streak de 30 dias)
+  // 2. Meio: Intimidade (Meta dinâmica baseada no ciclo)
   double _getDevotionalProgress() {
-    return (_streak / 7.0).clamp(0.0, 1.0);
+    return (_streak / _targetIntimacy).clamp(0.0, 1.0);
   }
 
-  // 3. Esquerda: Semear (Meta: 20 compartilhamentos)
+  // 3. Esquerda: Semear (Meta dinâmica)
   double _getShareProgress() {
-    return (_totalShares / 20.0).clamp(0.0, 1.0);
+    return (_totalShares / _targetShares).clamp(0.0, 1.0);
   }
 
-  // 4. Direita: Evangelista (Meta: 10 convites)
+  // 4. Direita: Evangelista (Meta dinâmica)
   double _getInviteProgress() {
-    return (_totalInvites / 10.0).clamp(0.0, 1.0);
+    return (_totalInvites / _targetInvites).clamp(0.0, 1.0);
+  }
+  
+  // Verifica se o usuário "zerou" o mapa atual
+  bool _isMapCompleted() {
+    return _getPlansProgress() >= 1.0 &&
+           _getDevotionalProgress() >= 1.0 &&
+           _getShareProgress() >= 1.0 &&
+           _getInviteProgress() >= 1.0;
+  }
+
+  // Gera a lista de nós para o mapa Zig-Zag
+  List<Map<String, dynamic>> _generateNodes() {
+    final bool mapCompleted = _isMapCompleted();
+
+    return [
+      // NÓ 1 (Base): Planos
+      {
+        'id': 'plans',
+        'icon': Icons.auto_stories,
+        'label': "Planos Bíblicos",
+        'sub': _myActivePlans.isNotEmpty ? "Dia ${_myActivePlans.first['current_day']}" : "Iniciar",
+        'progress': _getPlansProgress(),
+        'color': arcaOrange,
+        'onTap': () => _openReadingHub(initialTab: 0),
+        'alignment': -0.5, // Esquerda
+      },
+      // NÓ 2: Intimidade
+      {
+        'id': 'intimacy',
+        'icon': Icons.local_fire_department,
+        'label': "Intimidade",
+        'sub': "$_streak / $_targetIntimacy Dias",
+        'progress': _getDevotionalProgress(),
+        'color': Colors.redAccent,
+        'onTap': () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Meta do Nível $_currentCycle: $_targetIntimacy dias seguidos"))),
+        'alignment': 0.5, // Direita
+      },
+      // NÓ 3: Semear
+      {
+        'id': 'share',
+        'icon': Icons.share,
+        'label': "Semear",
+        'sub': "$_totalShares / $_targetShares",
+        'progress': _getShareProgress(),
+        'color': Colors.blue,
+        'onTap': () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Meta do Nível $_currentCycle: $_targetShares compartilhamentos"))),
+        'alignment': -0.5, // Direita
+      },
+      // NÓ 4: Evangelista
+      {
+        'id': 'invite',
+        'icon': Icons.group_add,
+        'label': "Evangelista",
+        'sub': "$_totalInvites / $_targetInvites",
+        'progress': _getInviteProgress(),
+        'color': Colors.purpleAccent,
+        'onTap': () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Meta do Nível $_currentCycle: $_targetInvites convites"))),
+        'alignment': 0.5, // Esquerda
+      },
+      // NÓ 5 (Topo): Próximo Nível (Boss)
+      {
+        'id': 'boss',
+        'icon': mapCompleted ? Icons.star : Icons.lock, // Estrela se desbloqueado
+        'label': mapCompleted ? "DEVOCIONAL FINAL" : "Bloqueado",
+        'sub': mapCompleted ? "Toque para Subir" : "Complete a Trilha",
+        'progress': mapCompleted ? 1.0 : 0.0,
+        'color': mapCompleted ? arcaOrange : Colors.grey, // Laranja destaque
+        'scale': 1.5, // Bem maior que os outros
+        'isLocked': !mapCompleted,
+        'onTap': () {
+          if (!mapCompleted) {
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Complete a trilha para enfrentar o desafio final!")));
+          } else {
+             _openBossDevotional(); // <--- NOVA FUNÇÃO
+          }
+        },
+        'alignment': 0.0,
+      },
+    ];
+  }
+
+  // --- AÇÃO DO BOSS ---
+  void _openBossDevotional() {
+    // 1. Identificar qual devocional abrir (pode ser hardcoded por nível ou vindo do banco)
+    // Exemplo: Nível 1 abre devocional ID 100, Nível 2 abre ID 200...
+    int bossDevotionalId = 100 + _currentCycle; 
+
+    // 2. Navegar (Usando a tela que já temos)
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => DevotionalScreen(
+          devotionalId: bossDevotionalId, 
+          // Opcional: Passar um parametro 'isBoss: true' para a tela mudar o visual se quiser
+          onJumpToBible: (abbrev, ch, verse) {
+            // Lógica de salto normal
+          },
+        ),
+      ),
+    ).then((completed) async {
+      // 3. SE O USUÁRIO COMPLETOU (Retorno true do pop)
+      if (completed == true) {
+        // Damos um "Level Up" manual
+        // Adicionamos XP extra para garantir a subida de nível
+        await _grantLevelUpBonus();
+      }
+    });
+  }
+
+  Future<void> _grantLevelUpBonus() async {
+    setState(() => _isLoading = true);
+    try {
+      // RPC fictícia ou update manual. Vamos simular somando leituras.
+      // A ideia é garantir que ele passe o threshold do próximo nível.
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+         // Adiciona 5 leituras fictícias como bônus de conclusão de mapa
+         await supabase.rpc('increment_devotional_count', params: {'amount': 5}); 
+         
+         await _loadData(); // Recarrega -> O Nível sobe -> O Bioma muda!
+         
+         if (mounted) {
+           _showLevelUpDialog();
+         }
+      }
+    } catch (e) {
+      debugPrint("Erro bonus: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showLevelUpDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("NOVO NÍVEL ALCANÇADO! 🚀"),
+        content: const Text("Você completou a jornada e subiu para um novo patamar espiritual. O cenário mudou, e novos desafios aguardam!"),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("GLÓRIA A DEUS!"))],
+      )
+    );
   }
 
   // --- CONTROLLERS ---
@@ -68,18 +220,13 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     super.initState();
     _modalTabController = TabController(length: 2, vsync: this);
     
-    // Animação de "respiração" (flutuação) dos ícones do mapa
     _floatController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 3),
     )..repeat(reverse: true);
 
+    // Apenas carrega os dados. O scroll acontecerá lá dentro quando terminar.
     _loadData();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
   }
 
   @override
@@ -108,9 +255,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
       _allPlans = List<Map<String, dynamic>>.from(plansResp);
       _featuredPlans = _allPlans.where((p) => p['is_featured'] == true).toList();
 
-      // 2. Stats com Proteção (Try/Catch específico para colunas novas)
       try {
-        // Tenta buscar tudo. Se 'total_shares' não existir no banco, vai cair no catch.
         final statsResp = await supabase
             .from('user_stats')
             .select('current_streak, total_devotionals_read, total_shares, total_invites') 
@@ -125,8 +270,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
           _totalInvites = statsResp['total_invites'] ?? 0;
         }
       } catch (e) {
-        debugPrint("Aviso: Colunas novas de stats ainda não existem. Usando 0. ($e)");
-        // Fallback seguro
+        debugPrint("Aviso: Stats error $e");
         _streak = 0; 
         _totalDevotionalsRead = 0;
       }
@@ -134,7 +278,18 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     } catch (e) {
       debugPrint("Erro data: $e");
     } finally {
-      if (mounted) setState(() { _isLoading = false; });
+      if (mounted) {
+        setState(() { _isLoading = false; });
+        
+        // [CORREÇÃO AQUI]
+        // Agenda o scroll para o frame seguinte, garantindo que o Mapa já foi renderizado
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            // maxScrollExtent é o final da lista (onde fica o Nó 1, a base da montanha)
+            _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          }
+        });
+      }
     }
   }
 
@@ -178,93 +333,167 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     return "Lenda da Fé";
   }
 
+  // --- CONFIGURAÇÃO DOS BIOMAS ---
+  
+  // 1. Cores do Fundo (Gradiente)
   List<Color> _getBiomeColors(int level) {
-    // Retorna gradiente de fundo baseado no nível
-    if (level <= 2) return [const Color(0xFFFFF8E1), const Color(0xFFFFE0B2)]; // Deserto (Areia)
-    if (level <= 4) return [const Color(0xFFF1F8E9), const Color(0xFFC8E6C9)]; // Floresta
-    return [const Color(0xFFF3E5F5), const Color(0xFFD1C4E9)]; // Celestial
+    if (level <= 2) return [const Color(0xFFFFF3E0), const Color(0xFFFFE0B2)]; // Deserto (Laranja claro)
+    if (level <= 4) return [const Color(0xFFE8F5E9), const Color(0xFFC8E6C9)]; // Floresta (Verde claro)
+    return [const Color(0xFFF3E5F5), const Color(0xFFE1BEE7)]; // Céu (Lilás/Celestial)
+  }
+
+  // 2. Cor da Estrada (Ouro no céu, Terra na floresta, Areia no deserto)
+  Color _getPathColor(int level) {
+    if (level <= 2) return const Color(0xFFD7CCC8); // Terra seca (Deserto)
+    if (level <= 4) return const Color(0xFF795548); // Terra fértil (Floresta)
+    return const Color(0xFFFFD700); // OURO (Céu)
+  }
+
+  // 3. Decorações (Ping-Pong: Alternância forçada Esquerda/Direita)
+  Widget _buildBiomeDecorations(int level, double width, double height) {
+    List<Widget> items = [];
+    // Usamos o nível para variar a "cara" do aleatório, mas a estrutura será fixa
+    final math.Random random = math.Random(level); 
+
+    List<String> assets;
+    
+    if (level <= 2) { 
+      // DESERTO
+      assets = ['🌵', '🌵', '🌾', '🪨', '🪨', '🦂', '☀️', '🦎'];
+    } else if (level <= 4) { 
+      // FLORESTA
+      assets = ['🌲', '🌲', '🌳', '🍄', '🪵', '🌿', '🦊', '🦋'];
+    } else { 
+      // CÉU
+      assets = ['☁️', '☁️', '✨', '🕊️', '🌈', '⭐', '🪐', '🦅'];
+    }
+
+    // Aumentamos para 20 itens para preencher bem
+    int itemCount = 10; 
+    double segmentHeight = height / itemCount;
+
+    for (int i = 0; i < itemCount; i++) {
+      String asset = assets[random.nextInt(assets.length)];
+      
+      // Tamanho variado
+      double size = 22 + random.nextDouble() * 24; 
+
+      // Posição Y: Rigorosamente segmentada para não encavalar verticalmente
+      double topPos = (i * segmentHeight) + (random.nextDouble() * (segmentHeight * 0.5));
+
+      // LÓGICA PING-PONG:
+      // Se 'i' é par, vai pra Esquerda. Se ímpar, vai pra Direita.
+      // Isso impede que fiquem todos do mesmo lado.
+      bool placeOnLeft = (i % 2 == 0);
+      
+      // Ajuste fino para inverter a ordem a cada nível para não ficar monótono
+      if (level % 2 != 0) placeOnLeft = !placeOnLeft;
+
+      double leftPos;
+      if (placeOnLeft) {
+        // Lado Esquerdo Extremo (0% a 18% da tela) - Longe da estrada
+        leftPos = random.nextDouble() * (width * 0.18);
+      } else {
+        // Lado Direito Extremo (82% a 100% da tela) - Longe da estrada
+        leftPos = (width * 0.82) + (random.nextDouble() * (width * 0.18));
+      }
+
+      // Rotação aleatória
+      double rotation = (random.nextDouble() - 0.5) * 0.5;
+
+      items.add(Positioned(
+        top: topPos,
+        left: leftPos,
+        child: Transform.rotate(
+          angle: rotation,
+          child: Opacity(
+            opacity: 0.7, 
+            child: Text(
+              asset,
+              style: TextStyle(
+                fontSize: size,
+                decoration: TextDecoration.none,
+                shadows: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 5,
+                    offset: const Offset(2, 2),
+                  )
+                ]
+              ),
+            ),
+          ),
+        ),
+      ));
+    }
+    return Stack(children: items);
   }
 
   
-  // --- WIDGET DE NÓ ABSOLUTO (Correção do posicionamento) ---
-  Widget _buildAbsoluteNode({
-    required double top,
-    required double left,
-    required IconData icon,
-    required String label,
-    required String subLabel,
-    required double progress, // 0.0 a 1.0 (Define quanto da borda pinta)
-    required Color color,
-    required VoidCallback onTap,
-    bool isLocked = false,
-    String? lockedMessage,
-    double scale = 1.0,
-  }) {
-    return Positioned(
-      top: top,
-      left: left,
-      child: AnimatedBuilder(
-        animation: _floatController,
-        builder: (context, child) {
-          final dy = 6 * math.sin(_floatController.value * 2 * math.pi);
-          return Transform.translate(offset: Offset(0, dy), child: child);
-        },
-        child: GestureDetector(
-          onTap: isLocked 
-            ? () { if (lockedMessage != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(lockedMessage), backgroundColor: Colors.grey[800])); } 
-            : onTap,
-          child: Column(
-            children: [
-              // Ícone + Borda de Progresso
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Fundo Branco
-                  Container(
-                    height: 70 * scale, width: 70 * scale,
-                    decoration: BoxDecoration(
-                      color: isLocked ? Colors.grey[300] : Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: (isLocked ? Colors.grey : color).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))],
-                    ),
+  Widget _buildNodeWidget(Map<String, dynamic> node) {
+    final bool isLocked = node['isLocked'] ?? false;
+    final double scale = node['scale'] ?? 1.0;
+    final Color color = node['color'];
+    final double progress = node['progress'];
+
+    return AnimatedBuilder(
+      animation: _floatController,
+      builder: (context, child) {
+        // Deslocamento de fase para não flutuarem todos juntos (baseado no ID)
+        final offsetPhase = node['id'].hashCode % 10;
+        final dy = 6 * math.sin((_floatController.value * 2 * math.pi) + offsetPhase);
+        return Transform.translate(offset: Offset(0, dy), child: child);
+      },
+      child: GestureDetector(
+        onTap: node['onTap'],
+        child: Column(
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  height: 70 * scale, width: 70 * scale,
+                  decoration: BoxDecoration(
+                    color: isLocked ? Colors.grey[300] : Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: (isLocked ? Colors.grey : color).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))],
                   ),
-                  // Borda de Progresso (Se não bloqueado)
+                ),
+                if (!isLocked)
+                  CircularPercentIndicator(
+                    radius: 38.0 * scale,
+                    lineWidth: 5.0,
+                    percent: progress,
+                    backgroundColor: Colors.grey[200]!,
+                    progressColor: color,
+                    circularStrokeCap: CircularStrokeCap.round,
+                    animation: true,
+                  ),
+                Icon(
+                  node['icon'], 
+                  color: isLocked ? Colors.grey[500] : color, 
+                  size: (isLocked ? 28 : 30) * scale
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0,2))],
+                border: Border.all(color: isLocked ? Colors.grey[300]! : color.withOpacity(0.2), width: 1)
+              ),
+              child: Column(
+                children: [
+                  Text(node['label'], style: TextStyle(fontWeight: FontWeight.bold, color: isLocked ? Colors.grey : Colors.black87, fontSize: 11)),
                   if (!isLocked)
-                    CircularPercentIndicator(
-                      radius: 38.0 * scale,
-                      lineWidth: 5.0,
-                      percent: progress,
-                      backgroundColor: Colors.grey[200]!,
-                      progressColor: color, // A cor do nó preenche a borda
-                      circularStrokeCap: CircularStrokeCap.round,
-                      animation: true,
-                    ),
-                  // O Ícone
-                  isLocked 
-                    ? Icon(Icons.lock, color: Colors.grey[500], size: 28 * scale)
-                    : Icon(icon, color: color, size: 30 * scale),
+                    Text(node['sub'], style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w900)),
                 ],
               ),
-              const SizedBox(height: 10),
-              // Placa de Texto
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0,2))],
-                  border: Border.all(color: isLocked ? Colors.grey[300]! : color.withOpacity(0.2), width: 1)
-                ),
-                child: Column(
-                  children: [
-                    Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: isLocked ? Colors.grey : Colors.black87, fontSize: 11)),
-                    if (!isLocked && subLabel.isNotEmpty)
-                      Text(subLabel, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w900)),
-                  ],
-                ),
-              )
-            ],
-          ),
+            )
+          ],
         ),
       ),
     );
@@ -275,8 +504,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
   Widget build(BuildContext context) {
     final levelInfo = _calculateLevelInfo();
     final biomeColors = levelInfo['biomeColors'] as List<Color>;
-    final double screenWidth = MediaQuery.of(context).size.width;
-    const double mapHeight = 1400; // Altura para caber tudo
+    final nodes = _generateNodes(); // Gera os dados atuais
 
     return Scaffold(
       backgroundColor: biomeColors[0],
@@ -284,123 +512,77 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
         ? const Center(child: CircularProgressIndicator(color: arcaPurple))
         : Stack(
             children: [
-              // CAMADA 1: MAPA ROLÁVEL
-              SingleChildScrollView(
-                controller: _scrollController,
-                physics: const BouncingScrollPhysics(),
-                child: Container(
-                  height: mapHeight,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter, end: Alignment.topCenter,
-                      colors: biomeColors,
-                    )
-                  ),
-                  child: Stack(
-                    children: [
-                      // Estrada
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: GamePathPainter(
-                            pathColor: Colors.white.withOpacity(0.5),
-                            borderColor: Colors.black.withOpacity(0.05)
+              // CAMADA 1: MAPA ZIG-ZAG DINÂMICO
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Define altura baseada na quantidade de nós (Espaço fixo entre eles)
+                  const double nodeSpacing = 160.0;
+                  final double totalHeight = (nodes.length * nodeSpacing) + 300; // + Header e Footer padding
+
+                  return SingleChildScrollView(
+                    controller: _scrollController,
+                    physics: const BouncingScrollPhysics(),
+                    child: SizedBox(
+                      height: totalHeight,
+                      child: Stack(
+                        children: [
+                          // 0. CAMADA DE FUNDO (Cores do Bioma)
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                                  colors: biomeColors,
+                                )
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      
-                      // Base (Deserto/Início)
-                      Positioned(top: mapHeight * 0.85, right: 30, child: Icon(Icons.park, color: Colors.green.withOpacity(0.3), size: 50)),
-                      Positioned(top: mapHeight * 0.92, left: 40, child: Icon(Icons.grass, color: Colors.green.withOpacity(0.3), size: 30)),
-                      
-                      // Meio (Floresta)
-                      Positioned(top: mapHeight * 0.60, left: 20, child: Icon(Icons.park, color: Colors.green.withOpacity(0.4), size: 60)),
-                      Positioned(top: mapHeight * 0.45, right: 50, child: Icon(Icons.cloud, color: Colors.white.withOpacity(0.5), size: 80)),
-                      
-                      // Topo (Céu)
-                      Positioned(top: mapHeight * 0.25, left: 60, child: Icon(Icons.cloud, color: Colors.white.withOpacity(0.6), size: 60)),
-                      Positioned(
-                        top: mapHeight * 0.05, left: 0, right: 0,
-                        child: Center(
-                          child: Column(
-                            children: [
-                              Icon(Icons.wb_sunny, color: Colors.amber.withOpacity(0.3), size: 100),
-                              const SizedBox(height: 10),
-                              Text("RUMO AO ETERNO", style: TextStyle(fontSize: 10, letterSpacing: 4, fontWeight: FontWeight.bold, color: arcaPurple.withOpacity(0.4))),
-                            ],
+
+                          // 0.5. DECORAÇÕES (Cactos, Nuvens, etc)
+                          Positioned.fill(
+                            child: _buildBiomeDecorations(levelInfo['level'], constraints.maxWidth, totalHeight)
                           ),
-                        ),
+
+                          // 1. ESTRADA CUSTOMIZADA (Cor dinâmica)
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: DynamicZigZagPainter(
+                                nodes: nodes, 
+                                spacing: nodeSpacing,
+                                screenWidth: constraints.maxWidth,
+                                pathColor: _getPathColor(levelInfo['level']), // <--- COR NOVA
+                              ),
+                            ),
+                          ),
+
+                          // 2. Renderização dos Nós (Baseada na lista)
+                          ...List.generate(nodes.length, (index) {
+                            final node = nodes[index];
+                            // Cálculo da posição Y (De baixo para cima)
+                            // Index 0 é a base. Adicionamos padding inferior.
+                            final double bottomPos = 120.0 + (index * nodeSpacing);
+                            
+                            // Cálculo da posição X (Alinhamento relativo ao centro)
+                            final double centerX = constraints.maxWidth / 2;
+                            // Amplitude do ZigZag = 100px para cada lado
+                            final double leftPos = centerX + ((node['alignment'] as double) * 200) - 35; // -35 para centralizar o ícone de 70px
+
+                            return Positioned(
+                              bottom: bottomPos,
+                              left: leftPos,
+                              child: _buildNodeWidget(node), // Usa o método refatorado abaixo
+                            );
+                          }),
+                          
+                          // Elementos Decorativos (Nuvens/Sol) podem ser adicionados aqui com Positioned relativos se quiser
+                        ],
                       ),
-
-                      // --- OS 5 NÓS ---
-
-                      // 1. BASE: PLANOS BÍBLICOS
-                      _buildAbsoluteNode(
-                        top: mapHeight * 0.88, left: screenWidth * 0.15,
-                        icon: Icons.auto_stories,
-                        label: "Planos Bíblicos",
-                        subLabel: _myActivePlans.isNotEmpty 
-                            ? "Em andamento" 
-                            : "$_totalPlansCompleted Concluídos",
-                        progress: _getPlansProgress(),
-                        color: arcaOrange,
-                        onTap: () => _openReadingHub(initialTab: 0),
-                      ),
-
-                      // 2. MEIO: INTIMIDADE (Streak)
-                      _buildAbsoluteNode(
-                        top: mapHeight * 0.70, left: screenWidth * 0.65,
-                        icon: Icons.local_fire_department,
-                        label: "Intimidade",
-                        subLabel: "$_streak / 7 Dias",
-                        progress: _getDevotionalProgress(),
-                        color: Colors.redAccent,
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Mantenha o fogo aceso! Meta: 7 dias."))),
-                      ),
-
-                      // 3. ESQUERDA: SEMEAR (Compartilhamento)
-                      _buildAbsoluteNode(
-                        top: mapHeight * 0.50, left: screenWidth * 0.18,
-                        icon: Icons.share,
-                        label: "Semear",
-                        subLabel: "$_totalShares / 20",
-                        progress: _getShareProgress(),
-                        color: Colors.blue,
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Compartilhe versículos para completar!"))),
-                      ),
-
-                      // 4. DIREITA: EVANGELISTA (Convites)
-                      _buildAbsoluteNode(
-                        top: mapHeight * 0.30, left: screenWidth * 0.60,
-                        icon: Icons.group_add,
-                        label: "Evangelista",
-                        subLabel: "$_totalInvites / 10",
-                        progress: _getInviteProgress(),
-                        color: Colors.purpleAccent,
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Traga amigos para a Arca!"))),
-                      ),
-
-                      // 5. TOPO: CONTEÚDO BÔNUS (Bloqueado)
-                      _buildAbsoluteNode(
-                        top: mapHeight * 0.10, left: screenWidth * 0.38,
-                        icon: Icons.diamond,
-                        label: "Conteúdo Bônus",
-                        subLabel: "Nível 5",
-                        progress: 0.0,
-                        color: arcaPurple,
-                        scale: 1.3,
-                        isLocked: levelInfo['level'] < 5,
-                        lockedMessage: "Alcance o Nível 5 (Embaixador) para desbloquear.",
-                        onTap: () {},
-                      ),
-
-                      SizedBox(height: mapHeight) // Espaço final
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                }
               ),
 
-              // CAMADA 2: HEADER FIXO (Mantido da versão anterior funcional)
+              // CAMADA 2: HEADER FIXO (Mantido)
               Positioned(
                 top: 0, left: 0, right: 0,
                 child: _buildGamifiedHeader(levelInfo),
@@ -408,7 +590,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
             ],
           ),
       
-      // BOTÃO FLUTUANTE: SALA DO TESOURO
+      // Botão Flutuante (Mantido)
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAchievementsModal(),
         backgroundColor: arcaPurple,
@@ -956,52 +1138,85 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
 }
 
 // --- PAINTER (Estrada Sinuosa Ajustada para 1200px) ---
-class GamePathPainter extends CustomPainter {
-  final Color pathColor;
-  final Color borderColor;
-  GamePathPainter({required this.pathColor, required this.borderColor});
+class DynamicZigZagPainter extends CustomPainter {
+  final List<Map<String, dynamic>> nodes;
+  final double spacing;
+  final double screenWidth;
+  final Color pathColor; // <--- NOVO PARAMETRO
+
+  // Atualize o construtor
+  DynamicZigZagPainter({
+    required this.nodes, 
+    required this.spacing, 
+    required this.screenWidth,
+    this.pathColor = Colors.white, // Valor default
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = pathColor..style = PaintingStyle.stroke..strokeWidth = 70..strokeCap = StrokeCap.round;
-    final borderPaint = Paint()..color = borderColor..style = PaintingStyle.stroke..strokeWidth = 80..strokeCap = StrokeCap.round;
+    // ESTILO DA ESTRADA
+    final paint = Paint()
+      ..color = pathColor.withOpacity(0.8) // Usa a cor do bioma (Terra/Ouro)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 60
+      ..strokeCap = StrokeCap.round;
+      
+    // Se for o CÉU (Ouro), adicionamos um brilho extra (Shadow)
+    if (pathColor == const Color(0xFFFFD700)) {
+      paint.maskFilter = const MaskFilter.blur(BlurStyle.solid, 10);
+    }
+
+    // Borda da estrada (Contraste)
+    final borderPaint = Paint()
+      ..color = Colors.black.withOpacity(0.1)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 70 // Ligeiramente maior para fazer a borda
+      ..strokeCap = StrokeCap.round;
 
     final path = Path();
-    // Início (Baixo Esquerda - Nó 1)
-    path.moveTo(size.width * 0.20, size.height * 0.95);
     
-    // Curva para Nó 2 (Meio Direita)
-    path.cubicTo(
-      size.width * 0.90, size.height * 0.85, 
-      size.width * 0.85, size.height * 0.75, 
-      size.width * 0.65, size.height * 0.70 
-    );
+    // Helper para calcular coordenadas X e Y baseadas no índice e alinhamento
+    // Nota: O Y cresce para baixo no Canvas, mas nossa lista (Index 0) está na base visualmente.
+    // Então Index 0 = Y alto (perto de size.height).
+    
+    Offset getPoint(int index) {
+      final double bottomPos = 120.0 + (index * spacing);
+      final double y = size.height - bottomPos - 35; // 35 = metade do ícone (ajuste fino)
+      
+      final double alignment = nodes[index]['alignment'];
+      final double centerX = screenWidth / 2;
+      final double x = centerX + (alignment * 200);
+      
+      return Offset(x, y);
+    }
 
-    // Curva para Nó 3 (Meio Esquerda)
-    path.cubicTo(
-      size.width * 0.30, size.height * 0.65, 
-      size.width * 0.10, size.height * 0.55, 
-      size.width * 0.18, size.height * 0.50 
-    );
+    if (nodes.isEmpty) return;
 
-    // Curva para Nó 4 (Cima Direita)
-    path.cubicTo(
-      size.width * 0.50, size.height * 0.45, 
-      size.width * 0.80, size.height * 0.35, 
-      size.width * 0.60, size.height * 0.30 
-    );
+    // Move para o primeiro ponto
+    path.moveTo(getPoint(0).dx, getPoint(0).dy + 80); // Começa um pouco abaixo do primeiro nó
+    path.lineTo(getPoint(0).dx, getPoint(0).dy);
 
-    // Reta Final para Nó 5 (Topo Centro)
-    path.cubicTo(
-      size.width * 0.40, size.height * 0.25, 
-      size.width * 0.38, size.height * 0.15, 
-      size.width * 0.38, size.height * 0.10 
-    );
+    for (int i = 0; i < nodes.length - 1; i++) {
+      final p1 = getPoint(i);
+      final p2 = getPoint(i + 1);
 
+      // Curva de Bézier suave entre os pontos
+      final controlX = (p1.dx + p2.dx) / 2;
+      final controlY = (p1.dy + p2.dy) / 2;
+
+      path.quadraticBezierTo(p1.dx, controlY, controlX, controlY);
+      path.quadraticBezierTo(p2.dx, controlY, p2.dx, p2.dy);
+    }
+    
+    // Desenha uma linha final subindo para o "céu" após o último nó
+    final lastIdx = nodes.length - 1;
+    path.lineTo(getPoint(lastIdx).dx, getPoint(lastIdx).dy - 100);
+
+    // Desenha borda primeiro, depois a estrada colorida
     canvas.drawPath(path, borderPaint);
     canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true; 
 }

@@ -1,7 +1,7 @@
 name: arca_app
 description: "Conecte-se com a palavra de Deus. Estudos, devocionais e uma jornada espiritual."
 publish_to: 'none' 
-version: 2.0.1+1
+version: 2.0.2+1
 
 environment:
   # SDK ajustado para aceitar o ambiente do Render (Flutter 3.24 / Dart 3.5)
