@@ -1,7 +1,7 @@
 name: arca_app
 description: "Conecte-se com a palavra de Deus. Estudos, devocionais e uma jornada espiritual."
 publish_to: 'none' 
-version: 2.0.2+1
+version: 2.1.5+1
 
 environment:
   # SDK ajustado para aceitar o ambiente do Render (Flutter 3.24 / Dart 3.5)
@@ -56,17 +56,9 @@ flutter:
     - assets/env #--- local usa .env e online assets/env ---
     - assets/images/logo_arca.jpg
     - assets/images/arca_logo_circle.png
-    - assets/images/vof_bg_1.jpg
-    - assets/images/vof_bg_2.jpg
-    - assets/images/vof_bg_3.jpg
-    - assets/images/vof_bg_4.jpg
-    - assets/images/vof_bg_5.jpg
-    - assets/images/vof_bg_6.jpg
-    - assets/images/vof_bg_7.jpg
-    - assets/images/vof_bg_8.jpg
-    - assets/images/vof_bg_9.jpg
-    - assets/images/vof_bg_10.jpg
-    - assets/images/vof_bg_11.jpg
+    - assets/images/map_biome_desert.png
+    - assets/images/map_biome_sky.png
+    - assets/images/map_biome_forest.png
     - assets/icons/google_logo.svg
     - assets/icons/prayer_hands.png
 

@@ -20,6 +20,47 @@ class ReadingClubScreen extends StatefulWidget {
 }
 
 class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProviderStateMixin {
+  // --- CONFIGURAÇÃO DE COORDENADAS (0.0 a 1.0) ---
+  // (X, Y) relativos ao tamanho da imagem.
+  // X: 0.0 (Esq), 0.5 (Centro), 1.0 (Dir)
+  // Y: 0.0 (Topo), 1.0 (Base) -> Nota: No flutter o Y cresce para baixo.
+  // Mas como queremos começar de BAIXO (Nó 1 na base), vamos configurar de baixo para cima mentalmente,
+  // mas no código é Top-Down.
+  
+  final Map<String, List<Offset>> _biomeCoordinates = {
+    // DESERTO (5 Nós: Planos -> Intimidade -> Semear -> Evangelista -> Boss)
+    'desert': [
+      const Offset(0.50, 0.65), // Nó 1 (Base/Planos)
+      const Offset(0.75, 0.55), // Nó 2 (Direita)
+      const Offset(0.45, 0.34), // Nó 3 (Esquerda)
+      const Offset(0.80, 0.25), // Nó 4 (Direita/Centro)
+      const Offset(0.50, 0.15), // Nó 5 (Topo/Boss)
+    ],
+    // FLORESTA
+    'forest': [
+      const Offset(0.65, 0.75), // Base
+      const Offset(0.30, 0.68), // Esquerda
+      const Offset(0.52, 0.50), // Direita
+      const Offset(0.28, 0.38), // Esquerda
+      const Offset(0.50, 0.18), // Topo
+    ],
+    // CÉU
+    'sky': [
+      const Offset(0.55, 0.83), // Base
+      const Offset(0.25, 0.65), // Esquerda
+      const Offset(0.82, 0.52), // Direita
+      const Offset(0.25, 0.32), // Esquerda
+      const Offset(0.60, 0.16), // Topo
+    ],
+  };
+  
+  // Helper para pegar a chave correta
+  String _getBiomeKey(int level) {
+    if (level <= 3) return 'desert';
+    if (level <= 6) return 'forest';
+    return 'sky';
+  }
+  
   // --- DADOS E ESTADO ---
   bool _isLoading = true;
   List<Map<String, dynamic>> _myActivePlans = [];
@@ -213,7 +254,17 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
   final ScrollController _scrollController = ScrollController();
 
   // Níveis de Gamificação (XP necessário para subir)
-  final List<int> _levelMilestones = [5, 15, 30, 60, 150, 365];
+  final List<int> _levelMilestones = [
+    5,   // Alcance Nível 2 (Deserto)
+    10,  // Alcance Nível 3 (Deserto) -> Aqui libera o Boss do Deserto
+    20,  // Alcance Nível 4 (FLORESTA) -> Boss dá +10XP para pular de 10 pra 20
+    35,  // Alcance Nível 5 (Floresta)
+    50,  // Alcance Nível 6 (Floresta) -> Aqui libera o Boss da Floresta
+    75,  // Alcance Nível 7 (CÉU) -> Boss dá +10XP+ para pular de 50 pra perto de 75
+    120, // Nível 8
+    200, // Nível 9
+    365  // Lenda
+  ];
 
   @override
   void initState() {
@@ -320,7 +371,6 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
       'percent': percent,
       'total': _totalDevotionalsRead,
       'rankName': _getRankName(level),
-      'biomeColors': _getBiomeColors(level),
     };
   }
 
@@ -333,115 +383,32 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     return "Lenda da Fé";
   }
 
-  // --- CONFIGURAÇÃO DOS BIOMAS ---
-  
-  // 1. Cores do Fundo (Gradiente)
-  List<Color> _getBiomeColors(int level) {
-    if (level <= 2) return [const Color(0xFFFFF3E0), const Color(0xFFFFE0B2)]; // Deserto (Laranja claro)
-    if (level <= 4) return [const Color(0xFFE8F5E9), const Color(0xFFC8E6C9)]; // Floresta (Verde claro)
-    return [const Color(0xFFF3E5F5), const Color(0xFFE1BEE7)]; // Céu (Lilás/Celestial)
-  }
-
-  // 2. Cor da Estrada (Ouro no céu, Terra na floresta, Areia no deserto)
-  Color _getPathColor(int level) {
-    if (level <= 2) return const Color(0xFFD7CCC8); // Terra seca (Deserto)
-    if (level <= 4) return const Color(0xFF795548); // Terra fértil (Floresta)
-    return const Color(0xFFFFD700); // OURO (Céu)
-  }
-
-  // 3. Decorações (Ping-Pong: Alternância forçada Esquerda/Direita)
-  Widget _buildBiomeDecorations(int level, double width, double height) {
-    List<Widget> items = [];
-    // Usamos o nível para variar a "cara" do aleatório, mas a estrutura será fixa
-    final math.Random random = math.Random(level); 
-
-    List<String> assets;
-    
-    if (level <= 2) { 
-      // DESERTO
-      assets = ['🌵', '🌵', '🌾', '🪨', '🪨', '🦂', '☀️', '🦎'];
-    } else if (level <= 4) { 
-      // FLORESTA
-      assets = ['🌲', '🌲', '🌳', '🍄', '🪵', '🌿', '🦊', '🦋'];
-    } else { 
-      // CÉU
-      assets = ['☁️', '☁️', '✨', '🕊️', '🌈', '⭐', '🪐', '🦅'];
+  // --- SELEÇÃO DE CENÁRIO ISOMÉTRICO ---
+  String _getBiomeAssetPath(int level) {
+    // 3 Níveis por Bioma
+    if (level <= 3) {
+      return 'assets/images/map_biome_desert.png'; 
+    } else if (level <= 6) {
+      return 'assets/images/map_biome_forest.png';
+    } else {
+      return 'assets/images/map_biome_sky.png';
     }
-
-    // Aumentamos para 20 itens para preencher bem
-    int itemCount = 10; 
-    double segmentHeight = height / itemCount;
-
-    for (int i = 0; i < itemCount; i++) {
-      String asset = assets[random.nextInt(assets.length)];
-      
-      // Tamanho variado
-      double size = 22 + random.nextDouble() * 24; 
-
-      // Posição Y: Rigorosamente segmentada para não encavalar verticalmente
-      double topPos = (i * segmentHeight) + (random.nextDouble() * (segmentHeight * 0.5));
-
-      // LÓGICA PING-PONG:
-      // Se 'i' é par, vai pra Esquerda. Se ímpar, vai pra Direita.
-      // Isso impede que fiquem todos do mesmo lado.
-      bool placeOnLeft = (i % 2 == 0);
-      
-      // Ajuste fino para inverter a ordem a cada nível para não ficar monótono
-      if (level % 2 != 0) placeOnLeft = !placeOnLeft;
-
-      double leftPos;
-      if (placeOnLeft) {
-        // Lado Esquerdo Extremo (0% a 18% da tela) - Longe da estrada
-        leftPos = random.nextDouble() * (width * 0.18);
-      } else {
-        // Lado Direito Extremo (82% a 100% da tela) - Longe da estrada
-        leftPos = (width * 0.82) + (random.nextDouble() * (width * 0.18));
-      }
-
-      // Rotação aleatória
-      double rotation = (random.nextDouble() - 0.5) * 0.5;
-
-      items.add(Positioned(
-        top: topPos,
-        left: leftPos,
-        child: Transform.rotate(
-          angle: rotation,
-          child: Opacity(
-            opacity: 0.7, 
-            child: Text(
-              asset,
-              style: TextStyle(
-                fontSize: size,
-                decoration: TextDecoration.none,
-                shadows: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 5,
-                    offset: const Offset(2, 2),
-                  )
-                ]
-              ),
-            ),
-          ),
-        ),
-      ));
-    }
-    return Stack(children: items);
   }
 
   
   Widget _buildNodeWidget(Map<String, dynamic> node) {
     final bool isLocked = node['isLocked'] ?? false;
-    final double scale = node['scale'] ?? 1.0;
+    // Escala ligeiramente maior para competir com a riqueza do fundo
+    final double scale = (node['scale'] ?? 1.0) * 1.1; 
     final Color color = node['color'];
     final double progress = node['progress'];
 
     return AnimatedBuilder(
       animation: _floatController,
       builder: (context, child) {
-        // Deslocamento de fase para não flutuarem todos juntos (baseado no ID)
         final offsetPhase = node['id'].hashCode % 10;
-        final dy = 6 * math.sin((_floatController.value * 2 * math.pi) + offsetPhase);
+        // Flutuação mais suave para parecer isométrico
+        final dy = 4 * math.sin((_floatController.value * 2 * math.pi) + offsetPhase);
         return Transform.translate(offset: Offset(0, dy), child: child);
       },
       child: GestureDetector(
@@ -451,17 +418,24 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
             Stack(
               alignment: Alignment.center,
               children: [
+                // Fundo semitransparente (Glassmorphism) para integrar com o mapa
                 Container(
-                  height: 70 * scale, width: 70 * scale,
+                  height: 65 * scale, width: 65 * scale,
                   decoration: BoxDecoration(
-                    color: isLocked ? Colors.grey[300] : Colors.white,
+                    color: Colors.white.withOpacity(0.9), // Leve transparência
                     shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: (isLocked ? Colors.grey : color).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2), 
+                        blurRadius: 10, 
+                        offset: const Offset(0, 5) // Sombra projeta no chão isométrico
+                      )
+                    ],
                   ),
                 ),
                 if (!isLocked)
                   CircularPercentIndicator(
-                    radius: 38.0 * scale,
+                    radius: 35.0 * scale,
                     lineWidth: 5.0,
                     percent: progress,
                     backgroundColor: Colors.grey[200]!,
@@ -471,25 +445,25 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
                   ),
                 Icon(
                   node['icon'], 
-                  color: isLocked ? Colors.grey[500] : color, 
-                  size: (isLocked ? 28 : 30) * scale
+                  color: isLocked ? Colors.grey : color, 
+                  size: (isLocked ? 26 : 28) * scale
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
+            // Rótulo com fundo para legibilidade sobre a arte colorida
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.white.withOpacity(0.95),
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0,2))],
-                border: Border.all(color: isLocked ? Colors.grey[300]! : color.withOpacity(0.2), width: 1)
+                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: const Offset(0,2))],
               ),
               child: Column(
                 children: [
-                  Text(node['label'], style: TextStyle(fontWeight: FontWeight.bold, color: isLocked ? Colors.grey : Colors.black87, fontSize: 11)),
-                  if (!isLocked)
-                    Text(node['sub'], style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w900)),
+                  Text(node['label'], style: TextStyle(fontWeight: FontWeight.bold, color: isLocked ? Colors.grey : Colors.black87, fontSize: 10)),
+                  if (!isLocked && node['sub'] != null)
+                    Text(node['sub'], style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w800)),
                 ],
               ),
             )
@@ -503,78 +477,63 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
   @override
   Widget build(BuildContext context) {
     final levelInfo = _calculateLevelInfo();
-    final biomeColors = levelInfo['biomeColors'] as List<Color>;
-    final nodes = _generateNodes(); // Gera os dados atuais
+    final currentLevel = levelInfo['level'] as int;
+    final nodes = _generateNodes();
+    final String biomeAssetPath = _getBiomeAssetPath(currentLevel);
 
     return Scaffold(
-      backgroundColor: biomeColors[0],
+      backgroundColor: const Color(0xFFFFF3E0), // Cor de fundo de segurança
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator(color: arcaPurple))
         : Stack(
             children: [
-              // CAMADA 1: MAPA ZIG-ZAG DINÂMICO
+              // CAMADA 1: MAPA ISOMÉTRICO SCROLLÁVEL
               LayoutBuilder(
                 builder: (context, constraints) {
-                  // Define altura baseada na quantidade de nós (Espaço fixo entre eles)
-                  const double nodeSpacing = 160.0;
-                  final double totalHeight = (nodes.length * nodeSpacing) + 300; // + Header e Footer padding
+                  // A largura é fixa (largura da tela)
+                  final double screenWidth = constraints.maxWidth;
+                  
+                  // A altura da imagem deve ser proporcional. 
+                  // As imagens que você enviou parecem ter ratio ~2.2 (ex: 1080x2400).
+                  // Vamos calcular a altura necessária para mostrar a imagem inteira sem cortes.
+                  final double imageHeight = screenWidth * 2.8; // Ajuste este 2.4 se a imagem ficar curta/longa demais
 
                   return SingleChildScrollView(
                     controller: _scrollController,
-                    physics: const BouncingScrollPhysics(),
+                    physics: const ClampingScrollPhysics(), // Impede o "overscroll" elástico que mostra o fundo bege
                     child: SizedBox(
-                      height: totalHeight,
+                      height: imageHeight, // Força o scroll a ter o tamanho exato da imagem
+                      width: screenWidth,
                       child: Stack(
                         children: [
-                          // 0. CAMADA DE FUNDO (Cores do Bioma)
+                          // 1.1. IMAGEM DE FUNDO (Preenche tudo)
                           Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.bottomCenter, end: Alignment.topCenter,
-                                  colors: biomeColors,
-                                )
-                              ),
+                            child: Image.asset(
+                              biomeAssetPath,
+                              fit: BoxFit.cover, // Garante que preencha tudo
+                              alignment: Alignment.topCenter, // Começa do topo
                             ),
                           ),
 
-                          // 0.5. DECORAÇÕES (Cactos, Nuvens, etc)
-                          Positioned.fill(
-                            child: _buildBiomeDecorations(levelInfo['level'], constraints.maxWidth, totalHeight)
-                          ),
-
-                          // 1. ESTRADA CUSTOMIZADA (Cor dinâmica)
-                          Positioned.fill(
-                            child: CustomPaint(
-                              painter: DynamicZigZagPainter(
-                                nodes: nodes, 
-                                spacing: nodeSpacing,
-                                screenWidth: constraints.maxWidth,
-                                pathColor: _getPathColor(levelInfo['level']), // <--- COR NOVA
-                              ),
-                            ),
-                          ),
-
-                          // 2. Renderização dos Nós (Baseada na lista)
+                          // 1.2. NÓS POSICIONADOS MANUALMENTE
                           ...List.generate(nodes.length, (index) {
                             final node = nodes[index];
-                            // Cálculo da posição Y (De baixo para cima)
-                            // Index 0 é a base. Adicionamos padding inferior.
-                            final double bottomPos = 120.0 + (index * nodeSpacing);
+                            final String biomeKey = _getBiomeKey(currentLevel);
+                            final List<Offset> coords = _biomeCoordinates[biomeKey] ?? _biomeCoordinates['desert']!;
                             
-                            // Cálculo da posição X (Alinhamento relativo ao centro)
-                            final double centerX = constraints.maxWidth / 2;
-                            // Amplitude do ZigZag = 100px para cada lado
-                            final double leftPos = centerX + ((node['alignment'] as double) * 200) - 35; // -35 para centralizar o ícone de 70px
+                            // Proteção caso a lista de nós seja maior que as coordenadas configuradas
+                            final Offset pos = (index < coords.length) ? coords[index] : const Offset(0.5, 0.5);
+
+                            // Converte % para Pixels reais
+                            final double leftPos = (pos.dx * screenWidth) - 35; // -35 pra centralizar (70/2)
+                            final double topPos = (pos.dy * imageHeight) - 35;
 
                             return Positioned(
-                              bottom: bottomPos,
+                              top: topPos,
                               left: leftPos,
-                              child: _buildNodeWidget(node), // Usa o método refatorado abaixo
+                              child: _buildNodeWidget(node), 
                             );
                           }),
-                          
-                          // Elementos Decorativos (Nuvens/Sol) podem ser adicionados aqui com Positioned relativos se quiser
                         ],
                       ),
                     ),
@@ -582,7 +541,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
                 }
               ),
 
-              // CAMADA 2: HEADER FIXO (Mantido)
+              // CAMADA 2: HEADER FIXO
               Positioned(
                 top: 0, left: 0, right: 0,
                 child: _buildGamifiedHeader(levelInfo),
@@ -590,7 +549,7 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
             ],
           ),
       
-      // Botão Flutuante (Mantido)
+      // Botão Flutuante
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAchievementsModal(),
         backgroundColor: arcaPurple,
@@ -1135,88 +1094,4 @@ class ReadingClubScreenState extends State<ReadingClubScreen> with TickerProvide
     final TimeOfDay? picked = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 7, minute: 0), builder: (context, child) => Theme(data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: arcaPurple)), child: child!));
     if (picked != null) await NotificationService().scheduleDailyReminder(picked);
   }
-}
-
-// --- PAINTER (Estrada Sinuosa Ajustada para 1200px) ---
-class DynamicZigZagPainter extends CustomPainter {
-  final List<Map<String, dynamic>> nodes;
-  final double spacing;
-  final double screenWidth;
-  final Color pathColor; // <--- NOVO PARAMETRO
-
-  // Atualize o construtor
-  DynamicZigZagPainter({
-    required this.nodes, 
-    required this.spacing, 
-    required this.screenWidth,
-    this.pathColor = Colors.white, // Valor default
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // ESTILO DA ESTRADA
-    final paint = Paint()
-      ..color = pathColor.withOpacity(0.8) // Usa a cor do bioma (Terra/Ouro)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 60
-      ..strokeCap = StrokeCap.round;
-      
-    // Se for o CÉU (Ouro), adicionamos um brilho extra (Shadow)
-    if (pathColor == const Color(0xFFFFD700)) {
-      paint.maskFilter = const MaskFilter.blur(BlurStyle.solid, 10);
-    }
-
-    // Borda da estrada (Contraste)
-    final borderPaint = Paint()
-      ..color = Colors.black.withOpacity(0.1)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 70 // Ligeiramente maior para fazer a borda
-      ..strokeCap = StrokeCap.round;
-
-    final path = Path();
-    
-    // Helper para calcular coordenadas X e Y baseadas no índice e alinhamento
-    // Nota: O Y cresce para baixo no Canvas, mas nossa lista (Index 0) está na base visualmente.
-    // Então Index 0 = Y alto (perto de size.height).
-    
-    Offset getPoint(int index) {
-      final double bottomPos = 120.0 + (index * spacing);
-      final double y = size.height - bottomPos - 35; // 35 = metade do ícone (ajuste fino)
-      
-      final double alignment = nodes[index]['alignment'];
-      final double centerX = screenWidth / 2;
-      final double x = centerX + (alignment * 200);
-      
-      return Offset(x, y);
-    }
-
-    if (nodes.isEmpty) return;
-
-    // Move para o primeiro ponto
-    path.moveTo(getPoint(0).dx, getPoint(0).dy + 80); // Começa um pouco abaixo do primeiro nó
-    path.lineTo(getPoint(0).dx, getPoint(0).dy);
-
-    for (int i = 0; i < nodes.length - 1; i++) {
-      final p1 = getPoint(i);
-      final p2 = getPoint(i + 1);
-
-      // Curva de Bézier suave entre os pontos
-      final controlX = (p1.dx + p2.dx) / 2;
-      final controlY = (p1.dy + p2.dy) / 2;
-
-      path.quadraticBezierTo(p1.dx, controlY, controlX, controlY);
-      path.quadraticBezierTo(p2.dx, controlY, p2.dx, p2.dy);
-    }
-    
-    // Desenha uma linha final subindo para o "céu" após o último nó
-    final lastIdx = nodes.length - 1;
-    path.lineTo(getPoint(lastIdx).dx, getPoint(lastIdx).dy - 100);
-
-    // Desenha borda primeiro, depois a estrada colorida
-    canvas.drawPath(path, borderPaint);
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true; 
 }
