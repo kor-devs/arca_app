@@ -1437,7 +1437,7 @@ class TodayScreenState extends State<TodayScreen> {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          Text("dias seguidos • ",
+                          Text("dias • ",
                             style: TextStyle(color: Colors.white.withOpacity(0.8),
                               fontSize: 14,
                               fontWeight: FontWeight.w500,

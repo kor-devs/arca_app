@@ -39,13 +39,21 @@ class _VerseOfTheDayCardState extends State<VerseOfTheDayCard> {
     // Natureza / Paz
     'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?q=80&w=1000&auto=format&fit=crop',
     // Céu / Espiritual
-    'https://images.unsplash.com/photo-1510137600163-2729bc699b0b?q=80&w=1000&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1514519273132-6a1abd48302c?q=80&w=1000&auto=format&fit=crop',
     // Bíblia / Estudo
     'https://images.unsplash.com/photo-1491841550275-ad7854e35ca6?q=80&w=1000&auto=format&fit=crop',
     // Montanha / Fé
     'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=1000&auto=format&fit=crop',
     // Abstrato / Luz
-    'https://images.unsplash.com/photo-1493219686142-5a8641badc78?q=80&w=1000&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1766767673683-168676b97f4c?q=80&w=1000&auto=format&fit=crop',
+    // Mar / Serenidade
+    'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=1000&auto=format&fit=crop',
+    // Flores / Beleza
+    'https://images.unsplash.com/photo-1766059965561-e0e2a892031a?q=80&w=1000&auto=format&fit=crop',
+    // Fé / Esperança
+    'https://images.unsplash.com/photo-1505864681725-48344595127c?q=80&w=1000&auto=format&fit=crop',
+    // Família / Amor
+    'https://images.unsplash.com/photo-1648221350871-e3ae3c8d0f58?q=80&w=1000&auto=format&fit=crop',
   ];
 
   @override
